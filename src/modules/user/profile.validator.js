@@ -1,4 +1,4 @@
-const { body } = require("express-validator");
+const { body, query } = require("express-validator");
 
 exports.complete = [
     body("firstName")
@@ -63,4 +63,9 @@ exports.update = [
         .trim()
         .isLength({ min: 6, max: 6 })
         .withMessage("Pincode must be 6 digits"),
+];
+
+exports.getReferrals = [
+    query("page").optional().isInt({ min: 1 }),
+    query("limit").optional().isInt({ min: 1, max: 100 }),
 ];

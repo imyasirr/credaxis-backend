@@ -9,6 +9,16 @@ exports.getMyProfile = asyncHandler(async (req, res) => {
     return response.success(res, "Profile fetched successfully", profile);
 });
 
+exports.getMyReferralLink = asyncHandler(async (req, res) => {
+    const data = await profileService.getMyReferralLink(req.user.id);
+    return response.success(res, "Referral info fetched", data);
+});
+
+exports.getMyReferrals = asyncHandler(async (req, res) => {
+    const data = await profileService.getMyReferrals(req.user.id, req.query);
+    return response.success(res, "Referrals fetched", data);
+});
+
 exports.completeProfile = asyncHandler(async (req, res) => {
     const profile = await profileService.completeProfile(
         req.user.id,

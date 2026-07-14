@@ -1,4 +1,4 @@
-const { body } = require("express-validator");
+const { body, param } = require("express-validator");
 
 exports.mobileAuth = [
     body("mobile")
@@ -22,4 +22,20 @@ exports.verifyOtp = [
         .trim()
         .isLength({ min: 6, max: 20 })
         .withMessage("Invalid partner code"),
+
+    body("referralCode")
+        .optional()
+        .trim()
+        .isLength({ min: 6, max: 20 })
+        .withMessage("Invalid referral code"),
+];
+
+exports.validateReferralCode = [
+    param("code")
+        .trim()
+        .toUpperCase()
+        .notEmpty()
+        .withMessage("Referral code is required")
+        .isLength({ min: 6, max: 20 })
+        .withMessage("Invalid referral code"),
 ];

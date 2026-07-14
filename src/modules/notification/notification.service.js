@@ -13,24 +13,50 @@ exports.create = async (userId, { title, message, type = "INFO" }) => {
     return formatNotification(notification);
 };
 
-exports.getMyNotifications = async (userId, query) => {
+exports.getMyNotifications = async (userId, query = {}) => {
     const page = Number(query.page) || 1;
     const limit = Number(query.limit) || 20;
 
-    const [notifications, total] = await Promise.all([
-        notificationRepository.findByUserId(userId, { page, limit }),
-        notificationRepository.countByUserId(userId),
+    const filter = { user: userId };
+
+    if (query.isRead !== undefined && query.isRead !== "") {
+        const raw = String(query.isRead).toLowerCase();
+        filter.isRead = raw === "true" || raw === "1";
+    }
+
+    if (query.type) {
+        filter.type = String(query.type).toUpperCase();
+    }
+
+    const [notifications, total, unreadCount] = await Promise.all([
+        notificationRepository.findByFilter(filter, { page, limit }),
+        notificationRepository.countByFilter(filter),
+        notificationRepository.countUnread(userId),
     ]);
 
     return {
         notifications: notifications.map(formatNotification),
+        unreadCount,
         pagination: {
             page,
             limit,
             total,
-            totalPages: Math.ceil(total / limit),
+            totalPages: Math.ceil(total / limit) || 0,
         },
     };
+};
+
+exports.getNotificationById = async (userId, notificationId) => {
+    const notification = await notificationRepository.findOneByUser(
+        notificationId,
+        userId
+    );
+
+    if (!notification) {
+        throw new ApiError(404, "Notification not found");
+    }
+
+    return formatNotification(notification);
 };
 
 exports.getUnreadCount = async (userId) => {
@@ -52,6 +78,22 @@ exports.markAsRead = async (userId, notificationId) => {
 };
 
 exports.markAllAsRead = async (userId) => {
-    await notificationRepository.markAllAsRead(userId);
-    return { message: "All notifications marked as read" };
+    const result = await notificationRepository.markAllAsRead(userId);
+    return {
+        modifiedCount: result.modifiedCount || 0,
+        message: "All notifications marked as read",
+    };
+};
+
+exports.deleteNotification = async (userId, notificationId) => {
+    const deleted = await notificationRepository.deleteByUser(
+        notificationId,
+        userId
+    );
+
+    if (!deleted) {
+        throw new ApiError(404, "Notification not found");
+    }
+
+    return { id: notificationId, deleted: true };
 };

@@ -1,5 +1,6 @@
 const kycRepository = require("./kyc.repository");
 const Wallet = require("../wallet/wallet.model");
+const UserProfile = require("../user/userProfile.model");
 const notificationService = require("../notification/notification.service");
 
 const ApiError = require("../../utils/ApiError");
@@ -16,6 +17,35 @@ const getFilePath = (files, field) => {
     return getUploadPath("kyc", file.filename);
 };
 
+const buildProfileMap = async (userIds) => {
+    const ids = [...new Set(userIds.filter(Boolean).map((id) => id.toString()))];
+
+    if (!ids.length) {
+        return {};
+    }
+
+    const profiles = await UserProfile.find({ user: { $in: ids } });
+
+    return Object.fromEntries(
+        profiles.map((profile) => [profile.user.toString(), profile])
+    );
+};
+
+const formatKycWithProfile = async (kyc) => {
+    if (!kyc) return null;
+
+    const userId = (kyc.user?._id || kyc.user)?.toString();
+    const profileMap = await buildProfileMap([userId]);
+
+    // Ensure user is populated for mobile/email
+    let doc = kyc;
+    if (!kyc.user || typeof kyc.user !== "object" || kyc.user.mobile === undefined) {
+        doc = await kycRepository.findByIdWithUser(kyc._id);
+    }
+
+    return formatKyc(doc, profileMap);
+};
+
 exports.getMyKyc = async (userId) => {
     const kyc = await kycRepository.findByUserId(userId);
 
@@ -23,10 +53,14 @@ exports.getMyKyc = async (userId) => {
         return {
             status: "NOT_SUBMITTED",
             message: "KYC not submitted yet",
+            canSubmit: true,
         };
     }
 
-    return formatKyc(kyc);
+    return {
+        ...(await formatKycWithProfile(kyc)),
+        canSubmit: kyc.status === "REJECTED",
+    };
 };
 
 exports.submitKyc = async (userId, body, files) => {
@@ -46,6 +80,8 @@ exports.submitKyc = async (userId, body, files) => {
         selfie: getFilePath(files, "selfie"),
         status: "PENDING",
         remarks: "",
+        verifiedBy: null,
+        verifiedAt: null,
     };
 
     if (!kycData.panImage || !kycData.aadhaarFront || !kycData.aadhaarBack || !kycData.selfie) {
@@ -66,12 +102,15 @@ exports.submitKyc = async (userId, body, files) => {
         type: "INFO",
     });
 
-    return formatKyc(kyc);
+    return formatKycWithProfile(kyc);
 };
 
 exports.getPendingKycList = async () => {
     const list = await kycRepository.findPending();
-    return list.map(formatKyc);
+    const userIds = list.map((item) => item.user?._id || item.user);
+    const profileMap = await buildProfileMap(userIds);
+
+    return list.map((item) => formatKyc(item, profileMap));
 };
 
 exports.approveKyc = async (kycId, adminId) => {
@@ -99,7 +138,7 @@ exports.approveKyc = async (kycId, adminId) => {
         type: "SUCCESS",
     });
 
-    return formatKyc(kyc);
+    return formatKycWithProfile(kyc);
 };
 
 exports.rejectKyc = async (kycId, adminId, remarks) => {
@@ -115,11 +154,29 @@ exports.rejectKyc = async (kycId, adminId, remarks) => {
     kyc.remarks = remarks;
     await kyc.save();
 
+    await Wallet.updateOne({ user: kyc.user }, { isKycCompleted: false });
+
     await notificationService.create(kyc.user, {
         title: "KYC Rejected",
         message: remarks || "Your KYC was rejected. Please resubmit.",
         type: "ERROR",
     });
 
-    return formatKyc(kyc);
+    return formatKycWithProfile(kyc);
+};
+
+/** Shared helper — attach identity KYC to a userId */
+exports.getKycByUserId = async (userId) => {
+    const kyc = await kycRepository.findByUserId(userId);
+    if (!kyc) {
+        return {
+            status: "NOT_SUBMITTED",
+            canSubmit: true,
+            message: "KYC not submitted yet",
+        };
+    }
+    return {
+        ...(await formatKycWithProfile(kyc)),
+        canSubmit: kyc.status === "REJECTED",
+    };
 };

@@ -27,7 +27,7 @@ exports.formatProfile = (profile) => {
     };
 };
 
-exports.formatAuthUser = (user, profile, role) => {
+exports.formatAuthUser = (user, profile, role, referral = null) => {
     const profileData = profile?.toObject?.() || profile || {};
 
     const firstName = profileData.firstName || "";
@@ -49,6 +49,9 @@ exports.formatAuthUser = (user, profile, role) => {
         isEmailVerified: user.isEmailVerified,
         isProfileComplete: profileData.isProfileComplete || false,
         avatar: profileData.avatar || null,
+        referralCode: referral?.referralCode || user.referralCode || null,
+        referralCount: referral?.referralCount ?? 0,
+        referredBy: referral?.referredBy || null,
         createdAt: user.createdAt,
     };
 };

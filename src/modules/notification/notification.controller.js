@@ -16,6 +16,14 @@ exports.getUnreadCount = asyncHandler(async (req, res) => {
     return response.success(res, "Unread count fetched", data);
 });
 
+exports.getNotificationById = asyncHandler(async (req, res) => {
+    const data = await notificationService.getNotificationById(
+        req.user.id,
+        req.params.id
+    );
+    return response.success(res, "Notification fetched", data);
+});
+
 exports.markAsRead = asyncHandler(async (req, res) => {
     const data = await notificationService.markAsRead(
         req.user.id,
@@ -27,4 +35,12 @@ exports.markAsRead = asyncHandler(async (req, res) => {
 exports.markAllAsRead = asyncHandler(async (req, res) => {
     const data = await notificationService.markAllAsRead(req.user.id);
     return response.success(res, "All notifications marked as read", data);
+});
+
+exports.deleteNotification = asyncHandler(async (req, res) => {
+    const data = await notificationService.deleteNotification(
+        req.user.id,
+        req.params.id
+    );
+    return response.success(res, "Notification deleted", data);
 });

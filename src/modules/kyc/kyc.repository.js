@@ -10,10 +10,14 @@ class KycRepository extends BaseRepository {
         return this.findOne({ user: userId });
     }
 
+    findByIdWithUser(id) {
+        return this.model.findById(id).populate("user", "mobile email");
+    }
+
     findPending() {
         return this.model
             .find({ status: { $in: ["PENDING", "UNDER_REVIEW"] } })
-            .populate("user", "mobile")
+            .populate("user", "mobile email")
             .sort({ createdAt: -1 });
     }
 }

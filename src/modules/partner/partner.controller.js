@@ -23,6 +23,16 @@ exports.getMyPartner = asyncHandler(async (req, res) => {
     return response.success(res, "Partner details fetched", data);
 });
 
+exports.getMyKyc = asyncHandler(async (req, res) => {
+    const data = await partnerService.getMyKyc(req.user.id);
+    return response.success(res, "KYC fetched successfully", data);
+});
+
+exports.submitKyc = asyncHandler(async (req, res) => {
+    const data = await partnerService.submitKyc(req.user.id, req.body, req.files);
+    return response.success(res, "KYC submitted successfully", data, 201);
+});
+
 exports.updateApplication = asyncHandler(async (req, res) => {
     const data = await partnerService.updateApplication(
         req.user.id,
@@ -50,6 +60,59 @@ exports.getReferralStats = asyncHandler(async (req, res) => {
 exports.getReferrals = asyncHandler(async (req, res) => {
     const data = await partnerService.getReferrals(req.user.id, req.query);
     return response.success(res, "Referrals fetched successfully", data);
+});
+
+exports.getMyTokenBalances = asyncHandler(async (req, res) => {
+    const data = await partnerService.getMyTokenBalances(req.user.id);
+    return response.success(res, "Token balances fetched", data);
+});
+
+exports.getMyTokenTransfers = asyncHandler(async (req, res) => {
+    const data = await partnerService.getMyTokenTransfers(
+        req.user.id,
+        req.query
+    );
+    return response.success(res, "Token transfers fetched", data);
+});
+
+exports.getTokenPlans = asyncHandler(async (req, res) => {
+    const data = await partnerService.getTokenPlans(req.user.id, req.query);
+    return response.success(res, "Token plans fetched", data);
+});
+
+exports.purchaseTokens = asyncHandler(async (req, res) => {
+    const data = await partnerService.purchaseTokens(req.user.id, req.body);
+    const method = String(req.body.paymentMethod || "WALLET").toUpperCase();
+    const message =
+        method === "ONLINE"
+            ? "Online order created (Razorpay coming soon)"
+            : "Tokens purchased successfully";
+    return response.success(res, message, data, 201);
+});
+
+exports.getMyTokenPurchases = asyncHandler(async (req, res) => {
+    const data = await partnerService.getMyTokenPurchases(
+        req.user.id,
+        req.query
+    );
+    return response.success(res, "Token purchases fetched", data);
+});
+
+exports.getMyTokenPurchaseById = asyncHandler(async (req, res) => {
+    const data = await partnerService.getMyTokenPurchaseById(
+        req.user.id,
+        req.params.id
+    );
+    return response.success(res, "Token purchase fetched", data);
+});
+
+exports.verifyOnlinePayment = asyncHandler(async (req, res) => {
+    const data = await partnerService.verifyOnlinePayment(
+        req.user.id,
+        req.params.id,
+        req.body
+    );
+    return response.success(res, "Payment verified", data);
 });
 
 exports.getApplications = asyncHandler(async (req, res) => {

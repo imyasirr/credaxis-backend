@@ -20,6 +20,7 @@ exports.formatTokenPurchase = (purchase, profileMap = {}) => {
                       : "",
               }
             : null,
+        partner: data.partner?._id || data.partner || null,
         tokenPlan: data.tokenPlan?._id || data.tokenPlan,
         planTitle: data.planTitle,
         tokenType: data.tokenType,
@@ -28,6 +29,10 @@ exports.formatTokenPurchase = (purchase, profileMap = {}) => {
         planType: data.planType || "NORMAL",
         paymentMethod: data.paymentMethod || "WALLET",
         transactionId: data.transactionId,
+        walletTransaction: data.walletTransaction || null,
+        razorpayOrderId: data.razorpayOrderId || null,
+        razorpayPaymentId: data.razorpayPaymentId || null,
+        failureReason: data.failureReason || "",
         status: data.status,
         purchasedAt: data.purchasedAt,
         createdAt: data.createdAt,

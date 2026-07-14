@@ -1,10 +1,13 @@
 const userProfileRepository = require("./userProfile.repository");
+const userRepository = require("./user.repository");
+const userReferralService = require("./userReferral.service");
 const ApiError = require("../../utils/ApiError");
 const { formatProfile } = require("./user.mapper");
 const {
     getAvatarPath,
     deleteAvatarFile,
 } = require("../../middleware/upload.middleware");
+const { generateUserReferralCode } = require("../../utils/generateReferralCode");
 
 const buildProfileData = (body, avatarFile) => {
     const data = {};
@@ -33,7 +36,29 @@ exports.getMyProfile = async (userId) => {
         throw new ApiError(404, "Profile not found");
     }
 
-    return formatProfile(profile);
+    const user = await userRepository.findById(userId);
+    if (user && !user.referralCode) {
+        user.referralCode = await generateUserReferralCode();
+        await user.save();
+    }
+
+    const referral = await userReferralService.getMyReferralInfo(userId);
+    const kycService = require("../kyc/kyc.service");
+    const kyc = await kycService.getMyKyc(userId);
+
+    return {
+        ...formatProfile(profile),
+        referral,
+        kyc,
+    };
+};
+
+exports.getMyReferralLink = async (userId) => {
+    return userReferralService.getMyReferralInfo(userId);
+};
+
+exports.getMyReferrals = async (userId, query) => {
+    return userReferralService.getMyReferrals(userId, query);
 };
 
 exports.completeProfile = async (userId, body, avatarFile) => {

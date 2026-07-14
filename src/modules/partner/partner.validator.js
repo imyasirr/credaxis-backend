@@ -1,4 +1,4 @@
-const { body, param } = require("express-validator");
+const { body, param, query } = require("express-validator");
 
 const partnerFields = [
     body("businessName")
@@ -92,4 +92,42 @@ exports.approve = [
         .optional()
         .isFloat({ min: 0, max: 100 })
         .withMessage("Commission rate must be between 0 and 100"),
+];
+
+exports.getTokenPlans = [
+    query("page").optional().isInt({ min: 1 }),
+    query("limit").optional().isInt({ min: 1, max: 100 }),
+    query("tokenType").optional().isIn(["CRIF", "CIBIL", "EXPERIAN"]),
+    query("planType").optional().isIn(["NORMAL", "POPULAR"]),
+];
+
+exports.purchaseTokens = [
+    body("tokenPlanId").notEmpty().withMessage("Token plan is required"),
+
+    body("paymentMethod")
+        .optional()
+        .trim()
+        .toUpperCase()
+        .isIn(["WALLET", "ONLINE"])
+        .withMessage("paymentMethod must be WALLET or ONLINE"),
+];
+
+exports.getTokenPurchases = [
+    query("page").optional().isInt({ min: 1 }),
+    query("limit").optional().isInt({ min: 1, max: 100 }),
+    query("tokenType").optional().isIn(["CRIF", "CIBIL", "EXPERIAN"]),
+    query("status").optional().isIn(["PENDING", "SUCCESS", "FAILED", "REFUNDED"]),
+    query("paymentMethod")
+        .optional()
+        .trim()
+        .toUpperCase()
+        .isIn(["WALLET", "ONLINE"]),
+];
+
+exports.verifyOnlinePayment = [
+    param("id").notEmpty().withMessage("Purchase id is required"),
+
+    body("razorpay_order_id").optional().trim(),
+    body("razorpay_payment_id").optional().trim(),
+    body("razorpay_signature").optional().trim(),
 ];

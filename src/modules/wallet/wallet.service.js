@@ -104,6 +104,90 @@ exports.addMoney = async (userId, { amount, description }) => {
     }
 };
 
+/**
+ * Debit wallet balance.
+ * Pass an existing mongoose `session` to join a larger transaction
+ * (e.g. token purchase). When session is provided, caller owns commit/abort.
+ */
+exports.debitMoney = async (
+    userId,
+    { amount, description, referenceId = null },
+    session = null
+) => {
+    const ownSession = !session;
+
+    if (ownSession) {
+        session = await mongoose.startSession();
+        session.startTransaction();
+    }
+
+    try {
+        const Wallet = require("./wallet.model");
+        const wallet = await Wallet.findOne({ user: userId }).session(session);
+
+        if (!wallet) {
+            throw new ApiError(404, "Wallet not found");
+        }
+
+        if (wallet.status !== "ACTIVE") {
+            throw new ApiError(400, "Wallet is not active");
+        }
+
+        const debitAmount = Number(amount);
+
+        if (!debitAmount || debitAmount <= 0) {
+            throw new ApiError(400, "Amount must be greater than 0");
+        }
+
+        if (wallet.availableBalance < debitAmount) {
+            throw new ApiError(400, "Insufficient wallet balance");
+        }
+
+        const openingBalance = wallet.availableBalance;
+        const closingBalance = openingBalance - debitAmount;
+
+        wallet.availableBalance = closingBalance;
+        wallet.totalBalance = closingBalance;
+        await wallet.save({ session });
+
+        const transaction = await transactionRepository.create(
+            {
+                wallet: wallet._id,
+                user: userId,
+                transactionId: generateTransactionId(),
+                referenceId,
+                transactionType: "DEBIT",
+                paymentMethod: "WALLET",
+                amount: debitAmount,
+                openingBalance,
+                closingBalance,
+                description: description || "Wallet debit",
+                status: "SUCCESS",
+            },
+            session
+        );
+
+        if (ownSession) {
+            await session.commitTransaction();
+        }
+
+        return {
+            wallet: formatWallet(wallet),
+            transaction: formatTransaction(transaction),
+            transactionDoc: transaction,
+        };
+    } catch (error) {
+        if (ownSession) {
+            await session.abortTransaction();
+        }
+        throw error;
+    } finally {
+        if (ownSession) {
+            session.endSession();
+        }
+    }
+};
+
 exports.getBeneficiaries = async (userId) => {
     const beneficiaries = await beneficiaryRepository.findByUserId(userId);
     return beneficiaries.map(formatBeneficiary);

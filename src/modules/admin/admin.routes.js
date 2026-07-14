@@ -17,6 +17,10 @@ const adminUserRewardController = require("./admin.userReward.controller");
 const adminUserRewardValidator = require("./admin.userReward.validator");
 const adminTokenPurchaseController = require("./admin.tokenPurchase.controller");
 const adminTokenPurchaseValidator = require("./admin.tokenPurchase.validator");
+const adminTokenTransferController = require("./admin.tokenTransfer.controller");
+const adminTokenTransferValidator = require("./admin.tokenTransfer.validator");
+const adminUserReferralController = require("./admin.userReferral.controller");
+const adminUserReferralValidator = require("./admin.userReferral.validator");
 const auth = require("../../middleware/auth.middleware");
 const authorize = require("../../middleware/role.middleware");
 const validate = require("../../middleware/validation.middleware");
@@ -102,6 +106,31 @@ router.get(
     adminTokenPurchaseController.getTokenPurchaseById
 );
 
+router.get(
+    "/token-transfer-reasons",
+    adminTokenTransferController.getTransferReasons
+);
+router.get(
+    "/token-transfers",
+    adminTokenTransferValidator.getTransfers,
+    validate,
+    adminTokenTransferController.getTransfers
+);
+router.get(
+    "/token-transfers/:id",
+    adminTokenTransferController.getTransferById
+);
+router.post(
+    "/token-transfers",
+    adminTokenTransferValidator.createTransfer,
+    validate,
+    adminTokenTransferController.createTransfer
+);
+router.get(
+    "/partners/:partnerId/token-balances",
+    adminTokenTransferController.getPartnerBalances
+);
+
 router.get("/wheel/prizes", adminWheelPrizeController.getPrizes);
 router.get("/wheel/prize-types", adminWheelPrizeController.getPrizeTypes);
 router.get("/wheel/prizes/:id", adminWheelPrizeController.getPrizeById);
@@ -160,6 +189,23 @@ router.patch(
     adminUserRewardValidator.updateUserRewardStatus,
     validate,
     adminUserRewardController.updateUserRewardStatus
+);
+
+router.get(
+    "/settings/user-referral",
+    adminUserReferralController.getUserReferralSetting
+);
+router.put(
+    "/settings/user-referral",
+    adminUserReferralValidator.updateUserReferralSetting,
+    validate,
+    adminUserReferralController.updateUserReferralSetting
+);
+router.get(
+    "/user-referrals",
+    adminUserReferralValidator.getUserReferrals,
+    validate,
+    adminUserReferralController.getUserReferrals
 );
 
 module.exports = router;

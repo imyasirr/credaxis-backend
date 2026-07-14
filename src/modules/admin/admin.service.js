@@ -265,8 +265,14 @@ exports.getUserById = async (userId) => {
                   status: kyc.status,
                   panNumber: kyc.panNumber || "",
                   aadhaarNumber: kyc.aadhaarNumber || "",
+                  panImage: kyc.panImage || null,
+                  aadhaarFront: kyc.aadhaarFront || null,
+                  aadhaarBack: kyc.aadhaarBack || null,
+                  selfie: kyc.selfie || null,
                   remarks: kyc.remarks || "",
                   verifiedAt: kyc.verifiedAt || null,
+                  createdAt: kyc.createdAt || null,
+                  updatedAt: kyc.updatedAt || null,
               }
             : { status: "NOT_SUBMITTED" },
         wallet: wallet

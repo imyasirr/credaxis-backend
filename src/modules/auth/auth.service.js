@@ -16,6 +16,10 @@ const {
     getAuthRedirect,
 } = require("../user/user.mapper");
 const partnerService = require("../partner/partner.service");
+const userReferralService = require("../user/userReferral.service");
+const {
+    generateUserReferralCode,
+} = require("../../utils/generateReferralCode");
 
 const createUserAccount = async (mobile, session) => {
     const defaultRole = await roleRepository.getUserRole();
@@ -24,11 +28,14 @@ const createUserAccount = async (mobile, session) => {
         throw new ApiError(500, "Default role not found. Run role seeder first.");
     }
 
+    const referralCode = await generateUserReferralCode();
+
     const user = await userRepository.create(
         {
             mobile,
             role: defaultRole._id,
             isMobileVerified: true,
+            referralCode,
         },
         session
     );
@@ -117,7 +124,14 @@ exports.mobileAuth = async (mobile) => {
     };
 };
 
-exports.verifyOtp = async (mobile, otp, partnerCode) => {
+exports.verifyOtp = async (mobile, otp, { partnerCode, referralCode } = {}) => {
+    if (partnerCode && referralCode) {
+        throw new ApiError(
+            400,
+            "Use either partnerCode or referralCode, not both"
+        );
+    }
+
     let user = await userRepository.findByMobile(mobile);
     const purpose = user ? "LOGIN" : "REGISTER";
 
@@ -149,6 +163,18 @@ exports.verifyOtp = async (mobile, otp, partnerCode) => {
                 if (!linked) {
                     throw new ApiError(400, "Invalid or inactive partner code");
                 }
+                // refresh after referredBy update
+                user = await userRepository.findById(user._id);
+            } else if (referralCode) {
+                const linked = await userReferralService.linkUserReferral(
+                    referralCode,
+                    user._id
+                );
+
+                if (!linked) {
+                    throw new ApiError(400, "Invalid or inactive referral code");
+                }
+                user = await userRepository.findById(user._id);
             }
         } catch (error) {
             await session.abortTransaction();
@@ -159,11 +185,16 @@ exports.verifyOtp = async (mobile, otp, partnerCode) => {
     } else {
         user.isMobileVerified = true;
         user.lastLogin = new Date();
+        if (!user.referralCode) {
+            user.referralCode = await generateUserReferralCode();
+        }
         await user.save();
 
         profile = await userProfileRepository.findOne({ user: user._id });
         role = await roleRepository.findById(user.role);
     }
+
+    const referral = await userReferralService.getMyReferralInfo(user._id);
 
     return formatAuthPayload({
         isNewUser,
@@ -172,6 +203,6 @@ exports.verifyOtp = async (mobile, otp, partnerCode) => {
             id: user._id,
             role: role.name,
         }),
-        user: formatAuthUser(user, profile, role),
+        user: formatAuthUser(user, profile, role, referral),
     });
 };

@@ -20,4 +20,11 @@ router.post(
     authController.verifyOtp
 );
 
+router.get(
+    "/referral/:code/validate",
+    authValidator.validateReferralCode,
+    validate,
+    authController.validateReferralCode
+);
+
 module.exports = router;

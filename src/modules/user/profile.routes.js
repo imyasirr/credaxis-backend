@@ -12,6 +12,15 @@ router.use(auth);
 
 router.get("/", profileController.getMyProfile);
 
+router.get("/referral", profileController.getMyReferralLink);
+
+router.get(
+    "/referrals",
+    profileValidator.getReferrals,
+    validate,
+    profileController.getMyReferrals
+);
+
 router.post(
     "/complete",
     uploadAvatar,

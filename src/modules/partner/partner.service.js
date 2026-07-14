@@ -13,6 +13,8 @@ const {
     formatRegistrationStatus,
 } = require("./partner.mapper");
 const { getUploadPath } = require("../../middleware/upload.middleware");
+const Kyc = require("../kyc/kyc.model");
+const { formatKycSummary } = require("../kyc/kyc.mapper");
 
 const getFilePath = (files, field) => {
     const file = files?.[field]?.[0];
@@ -56,6 +58,46 @@ const getProfileMap = async (userIds) => {
     return Object.fromEntries(profiles.map((p) => [p.user.toString(), p]));
 };
 
+/** Attach identity KYC (user KYC) onto partner DTOs */
+const attachKycToPartners = async (partners) => {
+    const list = Array.isArray(partners) ? partners : [partners];
+    const userIds = list
+        .map((p) => p?.userId)
+        .filter(Boolean)
+        .map((id) => id.toString());
+
+    if (!userIds.length) {
+        return Array.isArray(partners)
+            ? partners.map((p) => ({
+                  ...p,
+                  kyc: formatKycSummary(null),
+                  kycStatus: "NOT_SUBMITTED",
+              }))
+            : {
+                  ...partners,
+                  kyc: formatKycSummary(null),
+                  kycStatus: "NOT_SUBMITTED",
+              };
+    }
+
+    const kycRecords = await Kyc.find({ user: { $in: userIds } });
+    const kycMap = Object.fromEntries(
+        kycRecords.map((k) => [k.user.toString(), k])
+    );
+
+    const enrich = (partner) => {
+        const kyc = kycMap[partner.userId?.toString()];
+        const summary = formatKycSummary(kyc || null);
+        return {
+            ...partner,
+            kyc: summary,
+            kycStatus: summary.status,
+        };
+    };
+
+    return Array.isArray(partners) ? list.map(enrich) : enrich(partners);
+};
+
 const getApprovedPartner = async (userId) => {
     const partner = await partnerRepository.findByUserId(userId);
 
@@ -83,7 +125,7 @@ exports.getRegistrationStatus = async (userId) => {
             canUpdate: false,
             nextAction: "open_dashboard",
             message: "You are an approved partner",
-            application: formatPartner(partner),
+            application: await attachKycToPartners(formatPartner(partner)),
         });
     }
 
@@ -105,7 +147,7 @@ exports.getRegistrationStatus = async (userId) => {
             canUpdate: true,
             nextAction: "wait_for_approval",
             message: "Your application is under admin review",
-            application: formatPartner(partner),
+            application: await attachKycToPartners(formatPartner(partner)),
         });
     }
 
@@ -116,7 +158,7 @@ exports.getRegistrationStatus = async (userId) => {
             canUpdate: true,
             nextAction: "resubmit",
             message: partner.remarks || "Application rejected. You can re-apply",
-            application: formatPartner(partner),
+            application: await attachKycToPartners(formatPartner(partner)),
         });
     }
 
@@ -126,7 +168,7 @@ exports.getRegistrationStatus = async (userId) => {
         canUpdate: false,
         nextAction: "open_dashboard",
         message: "Partner application status fetched",
-        application: formatPartner(partner),
+        application: await attachKycToPartners(formatPartner(partner)),
     });
 };
 
@@ -172,7 +214,10 @@ exports.apply = async (userId, body, files) => {
     const data = buildPartnerData(body, files);
 
     if (!data.shopPhoto || !data.panDocument) {
-        throw new ApiError(400, "Shop photo and PAN document are required");
+        throw new ApiError(
+            400,
+            "Shop photo and PAN document are required. Send multipart/form-data with fields: shopPhoto, panDocument (gstDocument optional)"
+        );
     }
 
     data.status = "PENDING";
@@ -213,7 +258,17 @@ exports.getMyPartner = async (userId) => {
         };
     }
 
-    return formatPartner(partner);
+    return attachKycToPartners(formatPartner(partner));
+};
+
+exports.getMyKyc = async (userId) => {
+    const kycService = require("../kyc/kyc.service");
+    return kycService.getMyKyc(userId);
+};
+
+exports.submitKyc = async (userId, body, files) => {
+    const kycService = require("../kyc/kyc.service");
+    return kycService.submitKyc(userId, body, files);
 };
 
 exports.updateApplication = async (userId, body, files) => {
@@ -280,6 +335,7 @@ exports.getReferralStats = async (userId) => {
 
 exports.getDashboard = async (userId) => {
     const partner = await getApprovedPartner(userId);
+    const tokenTransferService = require("../creditToken/tokenTransfer.service");
 
     const recentRecords = await referralRepository.findByPartnerUserId(userId, {
         skip: 0,
@@ -292,6 +348,15 @@ exports.getDashboard = async (userId) => {
 
     const profileMap = await getProfileMap(userIds);
 
+    const [tokenBalances, tokenTransferData] = await Promise.all([
+        tokenTransferService.getPartnerBalancesByUser(userId),
+        tokenTransferService.getTransfers({
+            partnerUserId: userId,
+            page: 1,
+            limit: 5,
+        }),
+    ]);
+
     return {
         partner: formatPartner(partner),
         stats: {
@@ -300,6 +365,8 @@ exports.getDashboard = async (userId) => {
             commissionRate: partner.commissionRate,
             partnerCode: partner.partnerCode,
         },
+        tokenBalances,
+        recentTokenTransfers: tokenTransferData.transfers,
         recentReferrals: recentRecords.map((item) => {
             const referredUserId = (
                 item.referredUser?._id || item.referredUser
@@ -354,12 +421,63 @@ exports.getReferrals = async (userId, query) => {
 
 exports.getApplications = async (status) => {
     const list = await partnerRepository.findByStatus(status);
-    return list.map(formatPartner);
+    return attachKycToPartners(list.map(formatPartner));
 };
 
 exports.getAllPartners = async () => {
     const list = await partnerRepository.findByStatus(null);
-    return list.filter((p) => p.status === "APPROVED").map(formatPartner);
+    return attachKycToPartners(
+        list.filter((p) => p.status === "APPROVED").map(formatPartner)
+    );
+};
+
+exports.getMyTokenBalances = async (userId) => {
+    await getApprovedPartner(userId);
+    const tokenTransferService = require("../creditToken/tokenTransfer.service");
+    return tokenTransferService.getPartnerBalancesByUser(userId);
+};
+
+exports.getMyTokenTransfers = async (userId, query = {}) => {
+    await getApprovedPartner(userId);
+    const tokenTransferService = require("../creditToken/tokenTransfer.service");
+    return tokenTransferService.getTransfers({
+        ...query,
+        partnerUserId: userId,
+    });
+};
+
+exports.getTokenPlans = async (userId, query = {}) => {
+    await getApprovedPartner(userId);
+    const tokenPurchaseService = require("../creditToken/tokenPurchase.service");
+    return tokenPurchaseService.getActivePlans(query);
+};
+
+exports.purchaseTokens = async (userId, body) => {
+    await getApprovedPartner(userId);
+    const tokenPurchaseService = require("../creditToken/tokenPurchase.service");
+    return tokenPurchaseService.purchaseTokens(userId, body);
+};
+
+exports.getMyTokenPurchases = async (userId, query = {}) => {
+    await getApprovedPartner(userId);
+    const tokenPurchaseService = require("../creditToken/tokenPurchase.service");
+    return tokenPurchaseService.getUserPurchases(userId, query);
+};
+
+exports.getMyTokenPurchaseById = async (userId, purchaseId) => {
+    await getApprovedPartner(userId);
+    const tokenPurchaseService = require("../creditToken/tokenPurchase.service");
+    return tokenPurchaseService.getPurchaseById(userId, purchaseId);
+};
+
+exports.verifyOnlinePayment = async (userId, purchaseId, payload) => {
+    await getApprovedPartner(userId);
+    const tokenPurchaseService = require("../creditToken/tokenPurchase.service");
+    return tokenPurchaseService.verifyOnlinePayment(
+        userId,
+        purchaseId,
+        payload
+    );
 };
 
 exports.approve = async (partnerId, adminId, commissionRate) => {
@@ -389,9 +507,9 @@ exports.approve = async (partnerId, adminId, commissionRate) => {
     partner.remarks = "";
     await partner.save();
 
+    // Keep user's personal USR referralCode; partner invite uses Partner.partnerCode
     await userRepository.update(partner.user, {
         role: partnerRole._id,
-        referralCode: partnerCode,
     });
 
     await notificationService.create(partner.user, {
