@@ -5,8 +5,14 @@ module.exports = (err, req, res, next) => {
         console.error(err);
     }
 
-    return res.status(statusCode).json({
+    const body = {
         success: false,
         message: err.message || "Internal Server Error",
-    });
+    };
+
+    if (err.retryAfterSeconds != null) {
+        body.retryAfterSeconds = err.retryAfterSeconds;
+    }
+
+    return res.status(statusCode).json(body);
 };

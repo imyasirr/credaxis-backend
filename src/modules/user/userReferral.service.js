@@ -163,6 +163,12 @@ const grantConfiguredRewards = async (referrerId, refereeId, setting) => {
     return { referrerRewardId, refereeRewardId };
 };
 
+/** Used by user referral AND partner referral signup. */
+exports.applyReferralRewards = async (referrerUserId, refereeUserId) => {
+    const setting = await exports.getReferralSetting();
+    return grantConfiguredRewards(referrerUserId, refereeUserId, setting);
+};
+
 exports.validateReferralCode = async (code) => {
     const referrer = await User.findOne({
         referralCode: String(code).toUpperCase().trim(),
@@ -235,6 +241,22 @@ exports.linkUserReferral = async (referralCode, newUserId) => {
         referrerRewardId,
         refereeRewardId,
     });
+
+    const notificationService = require("../notification/notification.service");
+    if (referrerRewardId) {
+        await notificationService.create(referrer._id, {
+            title: "Referral Reward",
+            message: "You earned a reward for referring a new user",
+            type: "SUCCESS",
+        });
+    }
+    if (refereeRewardId) {
+        await notificationService.create(newUserId, {
+            title: "Welcome Reward",
+            message: "You received a signup referral reward",
+            type: "SUCCESS",
+        });
+    }
 
     return referrer;
 };
@@ -318,54 +340,134 @@ exports.getMyReferrals = async (userId, query = {}) => {
     };
 };
 
-/** Admin: list all user referrals */
+/** Admin: recent referrals — USER (USR) + PARTNER (PRT) */
 exports.getAdminReferrals = async (query = {}) => {
     const page = Number(query.page) || 1;
-    const limit = Number(query.limit) || 15;
+    const limit = Number(query.limit) || 20;
     const skip = (page - 1) * limit;
-    const filter = {};
+    const sourceFilter = String(query.source || "").toUpperCase(); // USER | PARTNER | ""
 
-    if (query.referrerId) filter.referrer = query.referrerId;
-    if (query.status) filter.status = query.status;
+    // Ensure models are registered before populate
+    require("../partner/partner.model");
+    const PartnerReferral = require("../partner/referral.model");
 
-    const [records, total] = await Promise.all([
-        UserReferral.find(filter)
-            .populate("referrer", "mobile email")
-            .populate("referredUser", "mobile email")
-            .sort({ createdAt: -1 })
-            .skip(skip)
-            .limit(limit),
-        UserReferral.countDocuments(filter),
-    ]);
+    const userFilter = {};
+    const partnerFilter = {};
+    if (query.status) {
+        userFilter.status = query.status;
+        partnerFilter.status = query.status;
+    }
+    if (query.referrerId) {
+        userFilter.referrer = query.referrerId;
+        partnerFilter.partnerUser = query.referrerId;
+    }
+
+    const fetchSize = Math.max(skip + limit, limit);
+
+    let userRecords = [];
+    let partnerRecords = [];
+    let userTotal = 0;
+    let partnerTotal = 0;
+
+    if (sourceFilter !== "PARTNER") {
+        [userRecords, userTotal] = await Promise.all([
+            UserReferral.find(userFilter)
+                .populate("referrer", "mobile email")
+                .populate("referredUser", "mobile email")
+                .sort({ createdAt: -1 })
+                .limit(fetchSize),
+            UserReferral.countDocuments(userFilter),
+        ]);
+    }
+
+    if (sourceFilter !== "USER") {
+        try {
+            [partnerRecords, partnerTotal] = await Promise.all([
+                PartnerReferral.find(partnerFilter)
+                    .populate("partnerUser", "mobile email")
+                    .populate("referredUser", "mobile email")
+                    .populate("partner", "businessName partnerCode")
+                    .sort({ createdAt: -1 })
+                    .limit(fetchSize),
+                PartnerReferral.countDocuments(partnerFilter),
+            ]);
+        } catch (err) {
+            // Fallback without partner populate if model/ref issues
+            console.error("Partner referrals populate failed:", err.message);
+            [partnerRecords, partnerTotal] = await Promise.all([
+                PartnerReferral.find(partnerFilter)
+                    .populate("partnerUser", "mobile email")
+                    .populate("referredUser", "mobile email")
+                    .sort({ createdAt: -1 })
+                    .limit(fetchSize),
+                PartnerReferral.countDocuments(partnerFilter),
+            ]);
+        }
+    }
+
+    const userMapped = userRecords.map((item) => ({
+        id: item._id,
+        source: "USER",
+        referralCode: item.referralCode,
+        status: item.status,
+        referrer: item.referrer
+            ? {
+                  id: item.referrer._id,
+                  mobile: item.referrer.mobile,
+                  email: item.referrer.email || "",
+              }
+            : null,
+        referredUser: item.referredUser
+            ? {
+                  id: item.referredUser._id,
+                  mobile: item.referredUser.mobile,
+                  email: item.referredUser.email || "",
+              }
+            : null,
+        referrerRewardId: item.referrerRewardId || null,
+        refereeRewardId: item.refereeRewardId || null,
+        createdAt: item.createdAt,
+    }));
+
+    const partnerMapped = partnerRecords.map((item) => ({
+        id: item._id,
+        source: "PARTNER",
+        referralCode: item.partnerCode,
+        status: item.status,
+        referrer: item.partnerUser
+            ? {
+                  id: item.partnerUser._id,
+                  mobile: item.partnerUser.mobile,
+                  email: item.partnerUser.email || "",
+                  businessName: item.partner?.businessName || "",
+              }
+            : null,
+        referredUser: item.referredUser
+            ? {
+                  id: item.referredUser._id,
+                  mobile: item.referredUser.mobile,
+                  email: item.referredUser.email || "",
+              }
+            : null,
+        referrerRewardId: null,
+        refereeRewardId: null,
+        createdAt: item.createdAt,
+    }));
+
+    const merged = [...userMapped, ...partnerMapped].sort(
+        (a, b) => new Date(b.createdAt) - new Date(a.createdAt)
+    );
+
+    const total = userTotal + partnerTotal;
+    const referrals = merged.slice(skip, skip + limit);
 
     return {
-        referrals: records.map((item) => ({
-            id: item._id,
-            referralCode: item.referralCode,
-            status: item.status,
-            referrer: item.referrer
-                ? {
-                      id: item.referrer._id,
-                      mobile: item.referrer.mobile,
-                      email: item.referrer.email || "",
-                  }
-                : null,
-            referredUser: item.referredUser
-                ? {
-                      id: item.referredUser._id,
-                      mobile: item.referredUser.mobile,
-                      email: item.referredUser.email || "",
-                  }
-                : null,
-            referrerRewardId: item.referrerRewardId,
-            refereeRewardId: item.refereeRewardId,
-            createdAt: item.createdAt,
-        })),
+        referrals,
         pagination: {
             page,
             limit,
             total,
-            totalPages: Math.ceil(total / limit),
+            totalPages: Math.ceil(total / limit) || 0,
         },
     };
 };

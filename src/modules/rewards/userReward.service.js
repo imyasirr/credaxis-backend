@@ -2,6 +2,17 @@ const UserReward = require("./userReward.model");
 const { computeExpiresAt, formatUserReward } = require("./userReward.mapper");
 const ApiError = require("../../utils/ApiError");
 
+const expireStaleRewards = async (userId) => {
+    await UserReward.updateMany(
+        {
+            user: userId,
+            status: "PENDING",
+            expiresAt: { $ne: null, $lt: new Date() },
+        },
+        { $set: { status: "EXPIRED" } }
+    );
+};
+
 exports.grantReward = async ({
     userId,
     gameType,
@@ -28,6 +39,111 @@ exports.grantReward = async ({
     return formatUserReward(reward);
 };
 
+exports.getMyRewards = async (userId, query = {}) => {
+    await expireStaleRewards(userId);
+
+    const page = Number(query.page) || 1;
+    const limit = Number(query.limit) || 20;
+    const skip = (page - 1) * limit;
+    const filter = { user: userId };
+
+    if (query.status) {
+        filter.status = String(query.status).toUpperCase();
+    }
+
+    if (query.gameType) {
+        filter.gameType = String(query.gameType).toUpperCase();
+    }
+
+    if (query.prizeType) {
+        filter.prizeType = String(query.prizeType).toUpperCase();
+    }
+
+    // usable = still claimable
+    if (query.usable === "true" || query.usable === "1") {
+        filter.status = "PENDING";
+        filter.$or = [
+            { expiresAt: null },
+            { expiresAt: { $gte: new Date() } },
+        ];
+    }
+
+    const [rewards, total, pendingCount, claimedCount, expiredCount, cancelledCount] =
+        await Promise.all([
+            UserReward.find(filter)
+                .sort({ wonAt: -1, createdAt: -1 })
+                .skip(skip)
+                .limit(limit),
+            UserReward.countDocuments(filter),
+            UserReward.countDocuments({
+                user: userId,
+                status: "PENDING",
+                $or: [{ expiresAt: null }, { expiresAt: { $gte: new Date() } }],
+            }),
+            UserReward.countDocuments({ user: userId, status: "CLAIMED" }),
+            UserReward.countDocuments({ user: userId, status: "EXPIRED" }),
+            UserReward.countDocuments({ user: userId, status: "CANCELLED" }),
+        ]);
+
+    return {
+        rewards: rewards.map((item) => formatUserReward(item)),
+        stats: {
+            total: pendingCount + claimedCount + expiredCount + cancelledCount,
+            pendingCount,
+            claimedCount,
+            expiredCount,
+            cancelledCount,
+            usableCount: pendingCount,
+        },
+        pagination: {
+            page,
+            limit,
+            total,
+            totalPages: Math.ceil(total / limit) || 0,
+        },
+    };
+};
+
+exports.getMyRewardStats = async (userId) => {
+    await expireStaleRewards(userId);
+
+    const [pendingCount, claimedCount, expiredCount, cancelledCount] =
+        await Promise.all([
+            UserReward.countDocuments({
+                user: userId,
+                status: "PENDING",
+                $or: [{ expiresAt: null }, { expiresAt: { $gte: new Date() } }],
+            }),
+            UserReward.countDocuments({ user: userId, status: "CLAIMED" }),
+            UserReward.countDocuments({ user: userId, status: "EXPIRED" }),
+            UserReward.countDocuments({ user: userId, status: "CANCELLED" }),
+        ]);
+
+    return {
+        total: pendingCount + claimedCount + expiredCount + cancelledCount,
+        pendingCount,
+        claimedCount,
+        expiredCount,
+        cancelledCount,
+        usableCount: pendingCount,
+    };
+};
+
+exports.getMyRewardById = async (userId, rewardId) => {
+    await expireStaleRewards(userId);
+
+    const reward = await UserReward.findOne({
+        _id: rewardId,
+        user: userId,
+    });
+
+    if (!reward) {
+        throw new ApiError(404, "Reward not found");
+    }
+
+    return formatUserReward(reward);
+};
+
 exports.claimReward = async (userId, rewardId) => {
     const reward = await UserReward.findOne({
         _id: rewardId,
@@ -39,11 +155,15 @@ exports.claimReward = async (userId, rewardId) => {
     }
 
     if (reward.status === "CLAIMED") {
-        throw new ApiError(400, "Reward already claimed");
+        throw new ApiError(400, "Reward already claimed / used");
     }
 
     if (reward.status === "CANCELLED") {
         throw new ApiError(400, "Reward has been cancelled");
+    }
+
+    if (reward.status === "EXPIRED") {
+        throw new ApiError(400, "Reward has expired");
     }
 
     if (reward.expiresAt && new Date(reward.expiresAt) < new Date()) {

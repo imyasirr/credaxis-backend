@@ -57,16 +57,34 @@ const createUserAccount = async (mobile, session) => {
     return { user, profile, role: defaultRole };
 };
 
+const OTP_RESEND_COOLDOWN_MS = 15 * 1000;
+
 const sendOtp = async (mobile, purpose, userId = null) => {
+    const existing = await otpRepository.findLatest(mobile, purpose);
+    const lastSent = existing?.lastSentAt || existing?.updatedAt || existing?.createdAt;
+
+    if (lastSent) {
+        const elapsed = Date.now() - new Date(lastSent).getTime();
+        if (elapsed < OTP_RESEND_COOLDOWN_MS) {
+            const retryAfterSeconds = Math.ceil(
+                (OTP_RESEND_COOLDOWN_MS - elapsed) / 1000
+            );
+            const error = new ApiError(
+                429,
+                `Please wait ${retryAfterSeconds} seconds before requesting another OTP`
+            );
+            error.retryAfterSeconds = retryAfterSeconds;
+            throw error;
+        }
+    }
+
     const otp = generateOtp();
 
-    await otpRepository.invalidatePending(mobile, purpose);
-
-    await otpRepository.create({
-        user: userId,
+    await otpRepository.upsertOtp({
+        userId,
         mobile,
-        otp,
         purpose,
+        otp,
         expiresAt: getOtpExpiry(5),
     });
 

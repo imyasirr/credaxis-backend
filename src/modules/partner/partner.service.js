@@ -585,5 +585,33 @@ exports.linkReferral = async (partnerCode, newUserId) => {
 
     await partnerRepository.incrementReferrals(partner._id);
 
+    // Same admin "User Referral" reward settings apply to partner-code signups
+    try {
+        const userReferralService = require("../user/userReferral.service");
+        const notificationService = require("../notification/notification.service");
+        const granted = await userReferralService.applyReferralRewards(
+            partner.user,
+            newUserId
+        );
+
+        if (granted.referrerRewardId) {
+            await notificationService.create(partner.user, {
+                title: "Referral Reward",
+                message: "You earned a reward for referring a new user",
+                type: "SUCCESS",
+            });
+        }
+
+        if (granted.refereeRewardId) {
+            await notificationService.create(newUserId, {
+                title: "Welcome Reward",
+                message: "You received a signup referral reward",
+                type: "SUCCESS",
+            });
+        }
+    } catch (err) {
+        console.error("Partner referral reward grant failed:", err.message);
+    }
+
     return partner;
 };
