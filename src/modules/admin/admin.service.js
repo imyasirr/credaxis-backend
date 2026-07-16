@@ -198,7 +198,7 @@ exports.getUsers = async (query) => {
     };
 };
 
-exports.updateUserStatus = async (userId, status) => {
+exports.updateUserStatus = async (userId, status, reason = null, adminId = null) => {
     const user = await User.findById(userId);
 
     if (!user) {
@@ -211,13 +211,31 @@ exports.updateUserStatus = async (userId, status) => {
         throw new ApiError(400, "Cannot change admin account status");
     }
 
+    const {
+        walletStatusForUserStatus,
+    } = require("../../constants/userStatusPolicy");
+
     user.status = status;
+    user.statusReason = reason || null;
+    user.statusChangedAt = new Date();
+    if (adminId) {
+        user.statusChangedBy = adminId;
+    }
     await user.save();
+
+    const wallet = await Wallet.findOne({ user: userId });
+    if (wallet) {
+        wallet.status = walletStatusForUserStatus(status);
+        await wallet.save();
+    }
 
     return {
         id: user._id,
         mobile: user.mobile,
         status: user.status,
+        statusReason: user.statusReason,
+        statusChangedAt: user.statusChangedAt,
+        walletStatus: wallet?.status || null,
     };
 };
 
@@ -243,6 +261,8 @@ exports.getUserById = async (userId) => {
         role: user.role?.name || user.role,
         roleId: user.role?._id || user.role,
         status: user.status,
+        statusReason: user.statusReason || null,
+        statusChangedAt: user.statusChangedAt || null,
         isMobileVerified: user.isMobileVerified,
         isEmailVerified: user.isEmailVerified,
         isProfileComplete: profile?.isProfileComplete || false,
@@ -334,7 +354,19 @@ exports.updateUser = async (userId, body) => {
     }
 
     if (body.status !== undefined) {
+        const {
+            walletStatusForUserStatus,
+        } = require("../../constants/userStatusPolicy");
+
         user.status = body.status;
+        user.statusReason = body.statusReason || body.reason || user.statusReason;
+        user.statusChangedAt = new Date();
+
+        const wallet = await Wallet.findOne({ user: userId });
+        if (wallet) {
+            wallet.status = walletStatusForUserStatus(body.status);
+            await wallet.save();
+        }
     }
 
     if (body.role !== undefined) {

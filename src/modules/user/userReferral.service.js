@@ -140,8 +140,16 @@ const grantConfiguredRewards = async (referrerId, refereeId, setting) => {
         return { referrerRewardId, refereeRewardId };
     }
 
+    const { canEarnReferral } = require("../../constants/userStatusPolicy");
+    const referrer = await User.findById(referrerId).select("status isDeleted");
+
     const referrerPrize = await resolvePrize(setting.referrerReward);
-    if (referrerPrize) {
+    if (
+        referrerPrize &&
+        referrer &&
+        !referrer.isDeleted &&
+        canEarnReferral(referrer.status)
+    ) {
         const reward = await grantReward({
             userId: referrerId,
             gameType: referrerPrize.gameType,

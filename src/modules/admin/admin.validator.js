@@ -11,6 +11,11 @@ exports.updateUserStatus = [
     body("status")
         .isIn(["ACTIVE", "INACTIVE", "BLOCKED", "SUSPENDED"])
         .withMessage("Invalid status"),
+    body("reason")
+        .optional({ values: "falsy" })
+        .trim()
+        .isLength({ max: 500 })
+        .withMessage("Reason must be at most 500 characters"),
 ];
 
 exports.updateUser = [

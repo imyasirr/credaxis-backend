@@ -50,6 +50,23 @@ const userSchema = new mongoose.Schema(
             default: "ACTIVE",
         },
 
+        statusReason: {
+            type: String,
+            trim: true,
+            default: null,
+        },
+
+        statusChangedAt: {
+            type: Date,
+            default: null,
+        },
+
+        statusChangedBy: {
+            type: mongoose.Schema.Types.ObjectId,
+            ref: "User",
+            default: null,
+        },
+
         // Verification
         isEmailVerified: {
             type: Boolean,

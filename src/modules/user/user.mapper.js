@@ -29,6 +29,10 @@ exports.formatProfile = (profile) => {
 
 exports.formatAuthUser = (user, profile, role, referral = null) => {
     const profileData = profile?.toObject?.() || profile || {};
+    const {
+        getAllowedActions,
+        STATUS_MESSAGES,
+    } = require("../../constants/userStatusPolicy");
 
     const firstName = profileData.firstName || "";
     const lastName = profileData.lastName || "";
@@ -45,6 +49,8 @@ exports.formatAuthUser = (user, profile, role, referral = null) => {
         countryCode: user.countryCode || "+91",
         role: role?.name || role,
         status: user.status,
+        statusMessage: STATUS_MESSAGES[user.status] || null,
+        allowedActions: getAllowedActions(user.status),
         isMobileVerified: user.isMobileVerified,
         isEmailVerified: user.isEmailVerified,
         isProfileComplete: profileData.isProfileComplete || false,

@@ -179,6 +179,17 @@ exports.validatePartnerCode = async (code) => {
         throw new ApiError(404, "Invalid or inactive partner code");
     }
 
+    const { canEarnReferral } = require("../../constants/userStatusPolicy");
+    const partnerUser = await userRepository.findById(partner.user);
+
+    if (
+        !partnerUser ||
+        partnerUser.isDeleted ||
+        !canEarnReferral(partnerUser.status)
+    ) {
+        throw new ApiError(404, "Invalid or inactive partner code");
+    }
+
     return {
         valid: true,
         partnerCode: partner.partnerCode,
@@ -551,6 +562,17 @@ exports.linkReferral = async (partnerCode, newUserId) => {
     const partner = await partnerRepository.findByPartnerCode(partnerCode);
 
     if (!partner) {
+        return null;
+    }
+
+    const { canEarnReferral } = require("../../constants/userStatusPolicy");
+    const partnerUser = await userRepository.findById(partner.user);
+
+    if (
+        !partnerUser ||
+        partnerUser.isDeleted ||
+        !canEarnReferral(partnerUser.status)
+    ) {
         return null;
     }
 

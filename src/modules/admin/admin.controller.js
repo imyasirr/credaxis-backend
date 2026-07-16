@@ -27,7 +27,9 @@ exports.getUserById = asyncHandler(async (req, res) => {
 exports.updateUserStatus = asyncHandler(async (req, res) => {
     const data = await adminService.updateUserStatus(
         req.params.id,
-        req.body.status
+        req.body.status,
+        req.body.reason || null,
+        req.user?.id || null
     );
     return response.success(res, "User status updated", data);
 });

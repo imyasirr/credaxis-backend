@@ -3,26 +3,37 @@ const express = require("express");
 const notificationController = require("./notification.controller");
 const notificationValidator = require("./notification.validator");
 const auth = require("../../middleware/auth.middleware");
+const requireAction = require("../../middleware/requireAction.middleware");
 const validate = require("../../middleware/validation.middleware");
+const { ACTIONS } = require("../../constants/userStatusPolicy");
 
 const router = express.Router();
 
 router.use(auth);
 
-// Works for both USER and PARTNER (same logged-in user id)
 router.get(
     "/",
+    requireAction(ACTIONS.NOTIFICATIONS_READ),
     notificationValidator.getMyNotifications,
     validate,
     notificationController.getMyNotifications
 );
 
-router.get("/unread-count", notificationController.getUnreadCount);
+router.get(
+    "/unread-count",
+    requireAction(ACTIONS.NOTIFICATIONS_READ),
+    notificationController.getUnreadCount
+);
 
-router.patch("/read-all", notificationController.markAllAsRead);
+router.patch(
+    "/read-all",
+    requireAction(ACTIONS.NOTIFICATIONS_WRITE),
+    notificationController.markAllAsRead
+);
 
 router.get(
     "/:id",
+    requireAction(ACTIONS.NOTIFICATIONS_READ),
     notificationValidator.notificationId,
     validate,
     notificationController.getNotificationById
@@ -30,6 +41,7 @@ router.get(
 
 router.patch(
     "/:id/read",
+    requireAction(ACTIONS.NOTIFICATIONS_WRITE),
     notificationValidator.notificationId,
     validate,
     notificationController.markAsRead
@@ -37,6 +49,7 @@ router.patch(
 
 router.delete(
     "/:id",
+    requireAction(ACTIONS.NOTIFICATIONS_WRITE),
     notificationValidator.notificationId,
     validate,
     notificationController.deleteNotification

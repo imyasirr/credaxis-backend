@@ -48,6 +48,8 @@ exports.getMyProfile = async (userId) => {
 
     return {
         ...formatProfile(profile),
+        mobile: user?.mobile || "",
+        countryCode: user?.countryCode || "+91",
         referral,
         kyc,
     };

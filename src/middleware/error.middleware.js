@@ -14,5 +14,13 @@ module.exports = (err, req, res, next) => {
         body.retryAfterSeconds = err.retryAfterSeconds;
     }
 
+    if (err.accountStatus) {
+        body.accountStatus = err.accountStatus;
+    }
+
+    if (err.allowedActions) {
+        body.allowedActions = err.allowedActions;
+    }
+
     return res.status(statusCode).json(body);
 };

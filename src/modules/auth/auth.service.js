@@ -20,6 +20,27 @@ const userReferralService = require("../user/userReferral.service");
 const {
     generateUserReferralCode,
 } = require("../../utils/generateReferralCode");
+const {
+    canAuthenticate,
+    STATUS_MESSAGES,
+    getAllowedActions,
+} = require("../../constants/userStatusPolicy");
+
+const assertUserCanAuth = (user) => {
+    if (!user) return;
+    if (user.isDeleted) {
+        throw new ApiError(403, STATUS_MESSAGES.INACTIVE);
+    }
+    if (!canAuthenticate(user.status)) {
+        const err = new ApiError(
+            403,
+            STATUS_MESSAGES[user.status] || "Account access denied"
+        );
+        err.accountStatus = user.status;
+        err.allowedActions = getAllowedActions(user.status);
+        throw err;
+    }
+};
 
 const createUserAccount = async (mobile, session) => {
     const defaultRole = await roleRepository.getUserRole();
@@ -128,6 +149,8 @@ const validateOtp = async (mobile, otp, purpose) => {
 
 exports.mobileAuth = async (mobile) => {
     const existingUser = await userRepository.findByMobile(mobile);
+    assertUserCanAuth(existingUser);
+
     const purpose = existingUser ? "LOGIN" : "REGISTER";
 
     const payload = await sendOtp(
@@ -151,6 +174,8 @@ exports.verifyOtp = async (mobile, otp, { partnerCode, referralCode } = {}) => {
     }
 
     let user = await userRepository.findByMobile(mobile);
+    assertUserCanAuth(user);
+
     const purpose = user ? "LOGIN" : "REGISTER";
 
     await validateOtp(mobile, otp, purpose);
