@@ -137,3 +137,47 @@ exports.deleteNotification = async (notificationId) => {
 
     return { id: notification._id, title: notification.title };
 };
+
+exports.sendToUser = async ({ userId, title, message, type = "INFO" }) => {
+    if (!userId) {
+        throw new ApiError(400, "User id is required");
+    }
+
+    const user = await User.findOne({ _id: userId, isDeleted: false });
+    if (!user) {
+        throw new ApiError(404, "User not found");
+    }
+
+    const cleanTitle = String(title || "").trim();
+    const cleanMessage = String(message || "").trim();
+
+    if (!cleanTitle) {
+        throw new ApiError(400, "Title is required");
+    }
+    if (!cleanMessage) {
+        throw new ApiError(400, "Message is required");
+    }
+
+    const allowedTypes = ["INFO", "SUCCESS", "WARNING", "ERROR"];
+    const cleanType = String(type || "INFO").toUpperCase();
+    if (!allowedTypes.includes(cleanType)) {
+        throw new ApiError(400, "Invalid notification type");
+    }
+
+    const notification = await Notification.create({
+        user: user._id,
+        title: cleanTitle,
+        message: cleanMessage,
+        type: cleanType,
+    });
+
+    const profile = await UserProfile.findOne({ user: user._id });
+
+    return formatAdminNotification(
+        await Notification.findById(notification._id).populate(
+            "user",
+            "mobile email"
+        ),
+        { [user._id.toString()]: profile }
+    );
+};

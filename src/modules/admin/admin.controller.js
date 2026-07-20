@@ -49,6 +49,11 @@ exports.getMe = asyncHandler(async (req, res) => {
     return response.success(res, "Admin profile fetched", data);
 });
 
+exports.updateMe = asyncHandler(async (req, res) => {
+    const data = await adminService.updateMe(req.user.id, req.body, req.file);
+    return response.success(res, "Profile updated successfully", data);
+});
+
 exports.getRoles = asyncHandler(async (req, res) => {
     const data = await adminService.getRoles();
     return response.success(res, "Roles fetched successfully", data);

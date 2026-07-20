@@ -42,6 +42,18 @@ const assertUserCanAuth = (user) => {
     }
 };
 
+/** Active user for auth, or null. Soft-deleted rows that still hold the mobile are released. */
+const resolveAuthUserByMobile = async (mobile) => {
+    const user = await userRepository.findByMobile(mobile);
+    if (user) return user;
+
+    const deleted = await userRepository.findDeletedByMobile(mobile);
+    if (deleted) {
+        await userRepository.releaseDeletedIdentity(deleted);
+    }
+    return null;
+};
+
 const createUserAccount = async (mobile, session) => {
     const defaultRole = await roleRepository.getUserRole();
 
@@ -148,7 +160,7 @@ const validateOtp = async (mobile, otp, purpose) => {
 };
 
 exports.mobileAuth = async (mobile) => {
-    const existingUser = await userRepository.findByMobile(mobile);
+    const existingUser = await resolveAuthUserByMobile(mobile);
     assertUserCanAuth(existingUser);
 
     const purpose = existingUser ? "LOGIN" : "REGISTER";
@@ -173,7 +185,7 @@ exports.verifyOtp = async (mobile, otp, { partnerCode, referralCode } = {}) => {
         );
     }
 
-    let user = await userRepository.findByMobile(mobile);
+    let user = await resolveAuthUserByMobile(mobile);
     assertUserCanAuth(user);
 
     const purpose = user ? "LOGIN" : "REGISTER";

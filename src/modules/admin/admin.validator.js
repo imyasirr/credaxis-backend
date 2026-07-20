@@ -7,6 +7,27 @@ exports.login = [
         .withMessage("Password must be at least 8 characters"),
 ];
 
+exports.updateMe = [
+    body("firstName")
+        .optional({ values: "falsy" })
+        .trim()
+        .isLength({ min: 1, max: 50 })
+        .withMessage("First name must be 1–50 characters"),
+    body("lastName")
+        .optional({ values: "falsy" })
+        .trim()
+        .isLength({ max: 50 })
+        .withMessage("Last name must be at most 50 characters"),
+    body("currentPassword")
+        .optional({ values: "falsy" })
+        .isLength({ min: 8 })
+        .withMessage("Current password must be at least 8 characters"),
+    body("newPassword")
+        .optional({ values: "falsy" })
+        .isLength({ min: 8 })
+        .withMessage("New password must be at least 8 characters"),
+];
+
 exports.updateUserStatus = [
     body("status")
         .isIn(["ACTIVE", "INACTIVE", "BLOCKED", "SUSPENDED"])

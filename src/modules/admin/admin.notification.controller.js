@@ -21,3 +21,8 @@ exports.deleteNotification = asyncHandler(async (req, res) => {
     );
     return response.success(res, "Notification deleted successfully", data);
 });
+
+exports.sendToUser = asyncHandler(async (req, res) => {
+    const data = await adminNotificationService.sendToUser(req.body);
+    return response.success(res, "Message sent successfully", data);
+});

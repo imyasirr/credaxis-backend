@@ -37,6 +37,56 @@ exports.formatKyc = (kyc, profileMap = {}) => {
         };
     }
 
+    const documents = [
+        {
+            key: "panNumber",
+            label: "PAN Number",
+            type: "text",
+            value: data.panNumber || "",
+            complete: Boolean(data.panNumber),
+        },
+        {
+            key: "aadhaarNumber",
+            label: "Aadhaar Number",
+            type: "text",
+            value: data.aadhaarNumber || "",
+            complete: Boolean(data.aadhaarNumber),
+        },
+        {
+            key: "panImage",
+            label: "PAN Image",
+            type: "file",
+            value: data.panImage || null,
+            complete: Boolean(data.panImage),
+        },
+        {
+            key: "aadhaarFront",
+            label: "Aadhaar Front",
+            type: "file",
+            value: data.aadhaarFront || null,
+            complete: Boolean(data.aadhaarFront),
+        },
+        {
+            key: "aadhaarBack",
+            label: "Aadhaar Back",
+            type: "file",
+            value: data.aadhaarBack || null,
+            complete: Boolean(data.aadhaarBack),
+        },
+        {
+            key: "selfie",
+            label: "Selfie",
+            type: "file",
+            value: data.selfie || null,
+            complete: Boolean(data.selfie),
+        },
+    ];
+
+    const missingDocs = documents
+        .filter((doc) => !doc.complete)
+        .map((doc) => doc.label);
+    const completedCount = documents.filter((doc) => doc.complete).length;
+
     return {
         id: data._id,
         userId,
@@ -52,6 +102,11 @@ exports.formatKyc = (kyc, profileMap = {}) => {
         verifiedAt: data.verifiedAt || null,
         createdAt: data.createdAt,
         updatedAt: data.updatedAt,
+        documents,
+        missingDocs,
+        completedCount,
+        totalDocs: documents.length,
+        isComplete: missingDocs.length === 0,
     };
 };
 

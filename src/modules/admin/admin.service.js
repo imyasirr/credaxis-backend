@@ -2,6 +2,7 @@ const User = require("../user/user.model");
 const UserProfile = require("../user/userProfile.model");
 const Partner = require("../partner/partner.model");
 const Kyc = require("../kyc/kyc.model");
+const kycRepository = require("../kyc/kyc.repository");
 const Wallet = require("../wallet/wallet.model");
 const WalletTransaction = require("../wallet/walletTransaction.model");
 const Role = require("../role/role.model");
@@ -9,8 +10,29 @@ const ROLES = require("../../constants/roles");
 
 const ApiError = require("../../utils/ApiError");
 const MESSAGES = require("../../constants/messages");
-const { compare } = require("../../utils/password");
+const { hash, compare } = require("../../utils/password");
 const { generateAccessToken } = require("../../utils/jwt");
+const {
+    getAvatarPath,
+    deleteAvatarFile,
+} = require("../../middleware/upload.middleware");
+
+const formatAdmin = (user, profile) => {
+    const fullName =
+        [profile?.firstName, profile?.lastName].filter(Boolean).join(" ") ||
+        "Admin";
+
+    return {
+        id: user._id,
+        email: user.email,
+        mobile: user.mobile,
+        role: user.role?.name || user.role,
+        firstName: profile?.firstName || "Admin",
+        lastName: profile?.lastName || "",
+        fullName,
+        avatar: profile?.avatar || null,
+    };
+};
 
 exports.login = async (email, password) => {
     const user = await User.findOne({
@@ -49,23 +71,13 @@ exports.login = async (email, password) => {
             id: user._id,
             role: user.role.name,
         }),
-        admin: {
-            id: user._id,
-            email: user.email,
-            mobile: user.mobile,
-            role: user.role.name,
-            firstName: profile?.firstName || "Admin",
-            lastName: profile?.lastName || "",
-            fullName: profile
-                ? [profile.firstName, profile.lastName]
-                      .filter(Boolean)
-                      .join(" ")
-                : "Admin",
-        },
+        admin: formatAdmin(user, profile),
     };
 };
 
 exports.getDashboard = async () => {
+    const adminRole = await Role.findOne({ name: ROLES.ADMIN });
+
     const [
         totalUsers,
         totalPartners,
@@ -77,7 +89,7 @@ exports.getDashboard = async () => {
     ] = await Promise.all([
         User.countDocuments({ isDeleted: false }),
         Partner.countDocuments({ status: "APPROVED" }),
-        Kyc.countDocuments({ status: { $in: ["PENDING", "UNDER_REVIEW"] } }),
+        kycRepository.countPendingForActiveUsers(adminRole?._id || null),
         Partner.countDocuments({ status: "PENDING" }),
         WalletTransaction.countDocuments(),
         Wallet.aggregate([
@@ -100,7 +112,15 @@ exports.getDashboard = async () => {
             {
                 $project: {
                     name: 1,
-                    count: { $size: "$users" },
+                    count: {
+                        $size: {
+                            $filter: {
+                                input: "$users",
+                                as: "u",
+                                cond: { $ne: ["$$u.isDeleted", true] },
+                            },
+                        },
+                    },
                 },
             },
         ]),
@@ -142,6 +162,19 @@ exports.getUsers = async (query) => {
         filter.mobile = { $regex: query.search, $options: "i" };
     }
 
+    const kycStatus = String(query.kycStatus || "").trim().toUpperCase();
+    if (kycStatus) {
+        if (kycStatus === "NOT_SUBMITTED") {
+            const submittedUserIds = await Kyc.distinct("user");
+            filter._id = { ...(filter._id || {}), $nin: submittedUserIds };
+        } else {
+            const matchingUserIds = await Kyc.find({
+                status: kycStatus,
+            }).distinct("user");
+            filter._id = { ...(filter._id || {}), $in: matchingUserIds };
+        }
+    }
+
     const [users, total] = await Promise.all([
         User.find(filter)
             .populate("role", "name displayName")
@@ -161,7 +194,10 @@ exports.getUsers = async (query) => {
 
     const kycRecords = await Kyc.find({ user: { $in: userIds } });
     const kycMap = Object.fromEntries(
-        kycRecords.map((k) => [k.user.toString(), k])
+        kycRecords.map((k) => {
+            const uid = (k.user?._id || k.user)?.toString();
+            return [uid, k];
+        })
     );
 
     return {
@@ -193,7 +229,7 @@ exports.getUsers = async (query) => {
             page,
             limit,
             total,
-            totalPages: Math.ceil(total / limit),
+            totalPages: Math.ceil(total / limit) || 1,
         },
     };
 };
@@ -472,12 +508,22 @@ exports.deleteUser = async (userId) => {
         throw new ApiError(400, "Cannot delete admin account");
     }
 
+    const originalMobile = user.mobile;
+
     user.isDeleted = true;
     user.deletedAt = new Date();
     user.status = "INACTIVE";
+
+    // Free unique mobile/email so the same number can register again
+    const prefix = `deleted_${user._id}_`;
+    user.mobile = prefix + originalMobile;
+    if (user.email) {
+        user.email = prefix + user.email;
+    }
+
     await user.save();
 
-    return { id: user._id, mobile: user.mobile };
+    return { id: user._id, mobile: originalMobile };
 };
 
 exports.getMe = async (userId) => {
@@ -495,15 +541,64 @@ exports.getMe = async (userId) => {
 
     const profile = await UserProfile.findOne({ user: userId });
 
-    return {
-        id: user._id,
-        email: user.email,
-        mobile: user.mobile,
-        role: user.role.name,
-        firstName: profile?.firstName || "Admin",
-        lastName: profile?.lastName || "",
-        fullName: profile
-            ? [profile.firstName, profile.lastName].filter(Boolean).join(" ")
-            : "Admin",
-    };
+    return formatAdmin(user, profile);
+};
+
+exports.updateMe = async (userId, body = {}, file = null) => {
+    const user = await User.findById(userId)
+        .select("+password")
+        .populate("role", "name displayName");
+
+    if (!user || user.isDeleted) {
+        throw new ApiError(404, "User not found");
+    }
+
+    if (user.role?.name !== ROLES.ADMIN) {
+        throw new ApiError(403, "Admin access only");
+    }
+
+    let profile = await UserProfile.findOne({ user: userId });
+    if (!profile) {
+        profile = await UserProfile.create({ user: userId });
+    }
+
+    if (body.firstName !== undefined) {
+        profile.firstName = String(body.firstName).trim();
+    }
+    if (body.lastName !== undefined) {
+        profile.lastName = String(body.lastName).trim();
+    }
+
+    if (file?.filename) {
+        if (profile.avatar) {
+            deleteAvatarFile(profile.avatar);
+        }
+        profile.avatar = getAvatarPath(file.filename);
+    }
+
+    await profile.save();
+
+    const currentPassword = body.currentPassword;
+    const newPassword = body.newPassword;
+
+    if (newPassword) {
+        if (!currentPassword) {
+            throw new ApiError(400, "Current password is required");
+        }
+        if (!user.password) {
+            throw new ApiError(400, "Password is not set for this account");
+        }
+        const ok = await compare(currentPassword, user.password);
+        if (!ok) {
+            throw new ApiError(400, "Current password is incorrect");
+        }
+        if (String(newPassword).length < 8) {
+            throw new ApiError(400, "New password must be at least 8 characters");
+        }
+        user.password = await hash(newPassword);
+        user.lastPasswordChangedAt = new Date();
+        await user.save();
+    }
+
+    return formatAdmin(user, profile);
 };

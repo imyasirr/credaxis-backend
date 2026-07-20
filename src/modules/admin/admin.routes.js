@@ -26,6 +26,7 @@ const adminRewardRuleValidator = require("./admin.rewardRule.validator");
 const auth = require("../../middleware/auth.middleware");
 const authorize = require("../../middleware/role.middleware");
 const validate = require("../../middleware/validation.middleware");
+const { uploadAvatar } = require("../../middleware/upload.middleware");
 const ROLES = require("../../constants/roles");
 
 const router = express.Router();
@@ -36,6 +37,13 @@ router.use(auth);
 router.use(authorize(ROLES.ADMIN));
 
 router.get("/me", adminController.getMe);
+router.patch(
+    "/me",
+    uploadAvatar,
+    adminValidator.updateMe,
+    validate,
+    adminController.updateMe
+);
 router.get("/dashboard", adminController.getDashboard);
 router.get("/roles", adminController.getRoles);
 router.get("/users", adminController.getUsers);
@@ -77,6 +85,10 @@ router.post(
 router.delete("/wallets/:id", adminWalletController.deleteWallet);
 
 router.get("/notifications", adminNotificationController.getNotifications);
+router.post(
+    "/notifications",
+    adminNotificationController.sendToUser
+);
 router.get("/notifications/:id", adminNotificationController.getNotificationById);
 router.delete("/notifications/:id", adminNotificationController.deleteNotification);
 
