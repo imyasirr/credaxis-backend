@@ -18,8 +18,16 @@ exports.grantReward = async ({
     gameType,
     prize,
     wonAt = new Date(),
+    valueOverride = null,
+    source = "OTHER",
+    ruleId = null,
+    grantedBy = null,
 }) => {
     const expiryDays = Number(prize.expiryDays) || 0;
+    const value =
+        valueOverride !== null && valueOverride !== undefined
+            ? Number(valueOverride)
+            : Number(prize.value) || 0;
 
     const reward = await UserReward.create({
         user: userId,
@@ -27,13 +35,16 @@ exports.grantReward = async ({
         prizeId: prize._id || prize.id,
         prizeTitle: prize.title,
         prizeType: prize.prizeType,
-        value: Number(prize.value) || 0,
+        value: Number.isNaN(value) ? 0 : value,
         color: prize.color || "#6366f1",
         expiryDays,
         status: prize.prizeType === "NO_PRIZE" ? "CLAIMED" : "PENDING",
         wonAt,
         expiresAt: computeExpiresAt(expiryDays, wonAt),
         claimedAt: prize.prizeType === "NO_PRIZE" ? wonAt : null,
+        source: source || "OTHER",
+        ruleId: ruleId || null,
+        grantedBy: grantedBy || null,
     });
 
     return formatUserReward(reward);

@@ -138,6 +138,13 @@ exports.approveKyc = async (kycId, adminId) => {
         type: "SUCCESS",
     });
 
+    try {
+        const rewardRuleService = require("../rewards/rewardRule.service");
+        await rewardRuleService.applyTrigger("KYC_APPROVED", kyc.user);
+    } catch (err) {
+        console.error("KYC_APPROVED reward rules failed:", err.message);
+    }
+
     return formatKycWithProfile(kyc);
 };
 

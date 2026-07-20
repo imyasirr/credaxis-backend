@@ -75,6 +75,29 @@ const userRewardSchema = new mongoose.Schema(
             type: Date,
             default: null,
         },
+
+        /** How this reward was created */
+        source: {
+            type: String,
+            enum: ["REFERRAL", "RULE", "ADMIN_MANUAL", "GAME", "OTHER"],
+            default: "OTHER",
+            index: true,
+        },
+
+        /** RewardRule that granted this (if any) */
+        ruleId: {
+            type: mongoose.Schema.Types.ObjectId,
+            ref: "RewardRule",
+            default: null,
+            index: true,
+        },
+
+        /** Admin who manually granted (if any) */
+        grantedBy: {
+            type: mongoose.Schema.Types.ObjectId,
+            ref: "User",
+            default: null,
+        },
     },
     {
         timestamps: true,

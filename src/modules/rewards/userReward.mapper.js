@@ -47,6 +47,9 @@ exports.formatUserReward = (reward, profileMap = {}) => {
         wonAt: data.wonAt,
         expiresAt: data.expiresAt,
         claimedAt: data.claimedAt,
+        source: data.source || "OTHER",
+        ruleId: data.ruleId || null,
+        grantedBy: data.grantedBy || null,
         createdAt: data.createdAt,
         updatedAt: data.updatedAt,
     };

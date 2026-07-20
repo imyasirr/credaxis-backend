@@ -219,6 +219,13 @@ exports.verifyOtp = async (mobile, otp, { partnerCode, referralCode } = {}) => {
                 }
                 user = await userRepository.findById(user._id);
             }
+
+            try {
+                const rewardRuleService = require("../rewards/rewardRule.service");
+                await rewardRuleService.applyTrigger("USER_SIGNUP", user._id);
+            } catch (err) {
+                console.error("USER_SIGNUP reward rules failed:", err.message);
+            }
         } catch (error) {
             await session.abortTransaction();
             throw error;

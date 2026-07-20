@@ -154,6 +154,7 @@ const grantConfiguredRewards = async (referrerId, refereeId, setting) => {
             userId: referrerId,
             gameType: referrerPrize.gameType,
             prize: referrerPrize.prize,
+            source: "REFERRAL",
         });
         referrerRewardId = reward.id;
     }
@@ -164,6 +165,7 @@ const grantConfiguredRewards = async (referrerId, refereeId, setting) => {
             userId: refereeId,
             gameType: refereePrize.gameType,
             prize: refereePrize.prize,
+            source: "REFERRAL",
         });
         refereeRewardId = reward.id;
     }
@@ -174,7 +176,26 @@ const grantConfiguredRewards = async (referrerId, refereeId, setting) => {
 /** Used by user referral AND partner referral signup. */
 exports.applyReferralRewards = async (referrerUserId, refereeUserId) => {
     const setting = await exports.getReferralSetting();
-    return grantConfiguredRewards(referrerUserId, refereeUserId, setting);
+    const fromSettings = await grantConfiguredRewards(
+        referrerUserId,
+        refereeUserId,
+        setting
+    );
+
+    // Also apply Reward Management rules for referral triggers
+    const rewardRuleService = require("../rewards/rewardRule.service");
+    const [referrerRules, refereeRules] = await Promise.all([
+        rewardRuleService.applyTrigger("REFERRAL_REFERRER", referrerUserId),
+        rewardRuleService.applyTrigger("REFERRAL_REFEREE", refereeUserId),
+    ]);
+
+    return {
+        ...fromSettings,
+        ruleRewards: {
+            referrer: referrerRules,
+            referee: refereeRules,
+        },
+    };
 };
 
 exports.validateReferralCode = async (code) => {
@@ -237,9 +258,12 @@ exports.linkUserReferral = async (referralCode, newUserId) => {
     newUser.referredBy = referrer._id;
     await newUser.save();
 
-    const setting = await exports.getReferralSetting();
-    const { referrerRewardId, refereeRewardId } =
-        await grantConfiguredRewards(referrer._id, newUserId, setting);
+    // Settings prizes + Reward Management rules (REFERRAL_*)
+    const granted = await exports.applyReferralRewards(
+        referrer._id,
+        newUserId
+    );
+    const { referrerRewardId, refereeRewardId } = granted;
 
     await UserReferral.create({
         referrer: referrer._id,
@@ -251,14 +275,14 @@ exports.linkUserReferral = async (referralCode, newUserId) => {
     });
 
     const notificationService = require("../notification/notification.service");
-    if (referrerRewardId) {
+    if (referrerRewardId || granted.ruleRewards?.referrer?.length) {
         await notificationService.create(referrer._id, {
             title: "Referral Reward",
             message: "You earned a reward for referring a new user",
             type: "SUCCESS",
         });
     }
-    if (refereeRewardId) {
+    if (refereeRewardId || granted.ruleRewards?.referee?.length) {
         await notificationService.create(newUserId, {
             title: "Welcome Reward",
             message: "You received a signup referral reward",

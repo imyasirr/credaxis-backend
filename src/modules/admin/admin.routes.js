@@ -21,6 +21,8 @@ const adminTokenTransferController = require("./admin.tokenTransfer.controller")
 const adminTokenTransferValidator = require("./admin.tokenTransfer.validator");
 const adminUserReferralController = require("./admin.userReferral.controller");
 const adminUserReferralValidator = require("./admin.userReferral.validator");
+const adminRewardRuleController = require("./admin.rewardRule.controller");
+const adminRewardRuleValidator = require("./admin.rewardRule.validator");
 const auth = require("../../middleware/auth.middleware");
 const authorize = require("../../middleware/role.middleware");
 const validate = require("../../middleware/validation.middleware");
@@ -206,6 +208,44 @@ router.get(
     adminUserReferralValidator.getUserReferrals,
     validate,
     adminUserReferralController.getUserReferrals
+);
+
+router.get("/reward-rules/meta", adminRewardRuleController.getMeta);
+router.get(
+    "/reward-rules",
+    adminRewardRuleValidator.listRules,
+    validate,
+    adminRewardRuleController.listRules
+);
+router.post(
+    "/reward-rules/grant",
+    adminRewardRuleValidator.grantManual,
+    validate,
+    adminRewardRuleController.grantManual
+);
+router.post(
+    "/reward-rules",
+    adminRewardRuleValidator.createRule,
+    validate,
+    adminRewardRuleController.createRule
+);
+router.get(
+    "/reward-rules/:id",
+    adminRewardRuleValidator.ruleId,
+    validate,
+    adminRewardRuleController.getRuleById
+);
+router.patch(
+    "/reward-rules/:id",
+    adminRewardRuleValidator.updateRule,
+    validate,
+    adminRewardRuleController.updateRule
+);
+router.delete(
+    "/reward-rules/:id",
+    adminRewardRuleValidator.ruleId,
+    validate,
+    adminRewardRuleController.deleteRule
 );
 
 module.exports = router;
