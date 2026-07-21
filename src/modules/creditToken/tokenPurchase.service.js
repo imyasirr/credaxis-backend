@@ -131,8 +131,8 @@ exports.purchaseWithWallet = async (userId, { tokenPlanId }) => {
 
         await session.commitTransaction();
 
-        await notificationService.create(userId, {
-            title: "Tokens Purchased",
+        await notificationService.notifySafe(userId, {
+            title: "Tokens purchased",
             message: `${plan.quantity} ${plan.tokenType} tokens added to your balance`,
             type: "SUCCESS",
         });

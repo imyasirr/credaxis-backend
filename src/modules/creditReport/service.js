@@ -11,6 +11,7 @@ const Kyc = require("../kyc/model");
 const ApiError = require("../../utils/ApiError");
 const { getUploadPath } = require("../../middleware/upload.middleware");
 const { formatCreditReport } = require("./mapper");
+const notificationService = require("../notification/service");
 
 const CREDIT_REPORT_PATH =
     process.env.DECENTRO_CREDIT_REPORT_PATH ||
@@ -307,11 +308,31 @@ exports.fetchCreditReportSummary = async ({
     await record.save();
 
     if (extracted.status === "FAILED") {
+        await notificationService.notifySafe(userId, {
+            title: "Credit report failed",
+            message:
+                extracted.errorMessage ||
+                "We could not fetch the credit report. Please try again.",
+            type: "ERROR",
+        });
+
         throw new ApiError(
             statusCode >= 400 && statusCode < 500 ? statusCode : 502,
             extracted.errorMessage || "Credit report fetch failed"
         );
     }
+
+    await notificationService.notifySafe(userId, {
+        title:
+            source === "ADMIN"
+                ? "Credit report ready"
+                : "Credit report fetched",
+        message:
+            extracted.score != null
+                ? `Credit report ready for ${cleanName}. Score: ${extracted.score}`
+                : `Credit report ready for ${cleanName}`,
+        type: "SUCCESS",
+    });
 
     return formatCreditReport(record, { includeRaw: false });
 };

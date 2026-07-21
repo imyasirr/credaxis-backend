@@ -13,6 +13,18 @@ exports.create = async (userId, { title, message, type = "INFO" }) => {
     return formatNotification(notification);
 };
 
+/** Never throws — use after successful business actions. */
+exports.notifySafe = async (userId, payload) => {
+    if (!userId) return null;
+
+    try {
+        return await exports.create(userId, payload);
+    } catch (err) {
+        console.error("Notification failed:", err.message);
+        return null;
+    }
+};
+
 exports.getMyNotifications = async (userId, query = {}) => {
     const page = Number(query.page) || 1;
     const limit = Number(query.limit) || 20;

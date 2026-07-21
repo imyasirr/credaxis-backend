@@ -7,6 +7,7 @@ const {
     formatPartnerTokenBalance,
 } = require("./tokenTransfer.mapper");
 const ApiError = require("../../utils/ApiError");
+const notificationService = require("../notification/service");
 
 const generateTransferId = () =>
     `TT${Date.now()}${Math.floor(Math.random() * 1000)
@@ -108,6 +109,12 @@ exports.createTransfer = async (adminId, body) => {
         );
 
         await session.commitTransaction();
+
+        await notificationService.notifySafe(partner.user, {
+            title: "Tokens received",
+            message: `Admin transferred ${quantity} ${body.tokenType} tokens to your partner account`,
+            type: "SUCCESS",
+        });
 
         const populated = await TokenTransfer.findById(transfer._id)
             .populate("partner", "businessName ownerName partnerCode email")

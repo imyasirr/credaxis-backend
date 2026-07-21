@@ -8,6 +8,7 @@ const Role = require("../role/model");
 const ROLES = require("../../constants/roles");
 
 const ApiError = require("../../utils/ApiError");
+const notificationService = require("../notification/service");
 const {
     formatWallet,
     formatTransaction,
@@ -213,6 +214,8 @@ exports.updateWallet = async (walletId, body) => {
         throw new ApiError(404, "Wallet not found");
     }
 
+    const prevStatus = wallet.status;
+
     if (body.status !== undefined) {
         wallet.status = body.status;
     }
@@ -245,6 +248,28 @@ exports.updateWallet = async (walletId, body) => {
     }
 
     await wallet.save();
+
+    if (body.status && body.status !== prevStatus) {
+        if (body.status === "ACTIVE") {
+            await notificationService.notifySafe(wallet.user, {
+                title: "Wallet activated",
+                message: "Your wallet is active again.",
+                type: "SUCCESS",
+            });
+        } else if (body.status === "BLOCKED") {
+            await notificationService.notifySafe(wallet.user, {
+                title: "Wallet blocked",
+                message: "Your wallet was blocked by admin.",
+                type: "ERROR",
+            });
+        } else {
+            await notificationService.notifySafe(wallet.user, {
+                title: "Wallet updated",
+                message: `Your wallet status is now ${body.status}`,
+                type: "INFO",
+            });
+        }
+    }
 
     return exports.getWalletById(walletId);
 };
@@ -316,6 +341,18 @@ exports.adjustBalance = async (walletId, { type, amount, description }) => {
 
         await session.commitTransaction();
 
+        await notificationService.notifySafe(wallet.user, {
+            title:
+                type === "CREDIT"
+                    ? "Wallet credited by admin"
+                    : "Wallet debited by admin",
+            message:
+                type === "CREDIT"
+                    ? `Admin added ₹${value} to your wallet`
+                    : `Admin deducted ₹${value} from your wallet`,
+            type: type === "CREDIT" ? "SUCCESS" : "WARNING",
+        });
+
         return exports.getWalletById(walletId);
     } catch (error) {
         await session.abortTransaction();
@@ -334,6 +371,12 @@ exports.deleteWallet = async (walletId) => {
 
     wallet.status = "BLOCKED";
     await wallet.save();
+
+    await notificationService.notifySafe(wallet.user, {
+        title: "Wallet blocked",
+        message: "Your wallet has been blocked by admin. Contact support if this is unexpected.",
+        type: "ERROR",
+    });
 
     return {
         id: wallet._id,

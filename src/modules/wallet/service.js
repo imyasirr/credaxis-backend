@@ -86,7 +86,7 @@ exports.addMoney = async (userId, { amount, description }) => {
 
         await session.commitTransaction();
 
-        await notificationService.create(userId, {
+        await notificationService.notifySafe(userId, {
             title: "Money Added",
             message: `₹${amount} added to your wallet successfully`,
             type: "SUCCESS",
@@ -111,10 +111,11 @@ exports.addMoney = async (userId, { amount, description }) => {
  */
 exports.debitMoney = async (
     userId,
-    { amount, description, referenceId = null },
+    { amount, description, referenceId = null, notify = null },
     session = null
 ) => {
     const ownSession = !session;
+    const shouldNotify = notify === null ? ownSession : Boolean(notify);
 
     if (ownSession) {
         session = await mongoose.startSession();
@@ -169,6 +170,14 @@ exports.debitMoney = async (
 
         if (ownSession) {
             await session.commitTransaction();
+        }
+
+        if (shouldNotify) {
+            await notificationService.notifySafe(userId, {
+                title: "Wallet debit",
+                message: `₹${debitAmount} was deducted from your wallet`,
+                type: "WARNING",
+            });
         }
 
         return {

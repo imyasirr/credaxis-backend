@@ -2,6 +2,7 @@ const User = require("../user/model");
 const UserProfile = require("../user/profile.model");
 const UserReward = require("../rewards/model");
 const { formatUserReward } = require("../rewards/mapper");
+const notificationService = require("../notification/service");
 const ApiError = require("../../utils/ApiError");
 
 const SORTABLE_FIELDS = {
@@ -152,6 +153,34 @@ exports.updateUserRewardStatus = async (rewardId, status) => {
     }
 
     await reward.save();
+
+    const userId = reward.user;
+    const statusNotify = {
+        CLAIMED: {
+            title: "Reward marked claimed",
+            message: `Admin marked your reward as claimed: ${reward.prizeTitle}`,
+            type: "INFO",
+        },
+        PENDING: {
+            title: "Reward reopened",
+            message: `Admin set your reward back to pending: ${reward.prizeTitle}`,
+            type: "INFO",
+        },
+        CANCELLED: {
+            title: "Reward cancelled",
+            message: `Admin cancelled your reward: ${reward.prizeTitle}`,
+            type: "WARNING",
+        },
+        EXPIRED: {
+            title: "Reward expired",
+            message: `Admin marked your reward as expired: ${reward.prizeTitle}`,
+            type: "WARNING",
+        },
+    };
+
+    if (statusNotify[status]) {
+        await notificationService.notifySafe(userId, statusNotify[status]);
+    }
 
     const populated = await UserReward.findById(rewardId).populate(
         "user",

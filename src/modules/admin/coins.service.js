@@ -6,6 +6,7 @@ const Role = require("../role/model");
 const coinService = require("../coins/service");
 const ROLES = require("../../constants/roles");
 const ApiError = require("../../utils/ApiError");
+const notificationService = require("../notification/service");
 const {
     formatCoinWallet,
     formatCoinTransaction,
@@ -189,11 +190,36 @@ exports.updateCoinWallet = async (walletId, body) => {
         throw new ApiError(404, "Coin account not found");
     }
 
+    const prevStatus = wallet.status;
+
     if (body.status !== undefined) {
         wallet.status = body.status;
     }
 
     await wallet.save();
+
+    if (body.status && body.status !== prevStatus) {
+        if (body.status === "ACTIVE") {
+            await notificationService.notifySafe(wallet.user, {
+                title: "Coin account activated",
+                message: "Your coin account is active again.",
+                type: "SUCCESS",
+            });
+        } else if (body.status === "BLOCKED") {
+            await notificationService.notifySafe(wallet.user, {
+                title: "Coin account blocked",
+                message: "Your coin account was blocked by admin.",
+                type: "ERROR",
+            });
+        } else {
+            await notificationService.notifySafe(wallet.user, {
+                title: "Coin account updated",
+                message: `Your coin account status is now ${body.status}`,
+                type: "INFO",
+            });
+        }
+    }
+
     return exports.getCoinWalletById(walletId);
 };
 
@@ -242,6 +268,12 @@ exports.deleteCoinWallet = async (walletId) => {
 
     wallet.status = "BLOCKED";
     await wallet.save();
+
+    await notificationService.notifySafe(wallet.user, {
+        title: "Coin account blocked",
+        message: "Your coin account was blocked by admin.",
+        type: "ERROR",
+    });
 
     return {
         id: wallet._id,

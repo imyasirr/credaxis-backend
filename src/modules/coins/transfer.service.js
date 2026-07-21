@@ -67,7 +67,7 @@ exports.createTransfer = async (adminId, body) => {
                 source: "TRANSFER",
                 description,
                 referenceId: transferId,
-                notify: true,
+                notify: false,
             },
             session
         );
@@ -90,6 +90,13 @@ exports.createTransfer = async (adminId, body) => {
         );
 
         await session.commitTransaction();
+
+        const notificationService = require("../notification/service");
+        await notificationService.notifySafe(user._id, {
+            title: "Coins received from admin",
+            message: `Admin transferred ${amount} coins to your account (${reasonLabel})`,
+            type: "SUCCESS",
+        });
 
         const populated = await CoinTransfer.findById(transfer._id)
             .populate("user", "mobile email status")

@@ -12,6 +12,7 @@ const ApiError = require("../../utils/ApiError");
 const MESSAGES = require("../../constants/messages");
 const { hash, compare } = require("../../utils/password");
 const { generateAccessToken } = require("../../utils/jwt");
+const notificationService = require("../notification/service");
 const {
     getAvatarPath,
     deleteAvatarFile,
@@ -264,6 +265,43 @@ exports.updateUserStatus = async (userId, status, reason = null, adminId = null)
         wallet.status = walletStatusForUserStatus(status);
         await wallet.save();
     }
+
+    const statusMessages = {
+        ACTIVE: {
+            title: "Account activated",
+            message: "Your account is active again. You can use CredAxis normally.",
+            type: "SUCCESS",
+        },
+        INACTIVE: {
+            title: "Account inactive",
+            message: reason
+                ? `Your account was set to inactive. Reason: ${reason}`
+                : "Your account was set to inactive by admin.",
+            type: "WARNING",
+        },
+        BLOCKED: {
+            title: "Account blocked",
+            message: reason
+                ? `Your account was blocked. Reason: ${reason}`
+                : "Your account was blocked by admin.",
+            type: "ERROR",
+        },
+        SUSPENDED: {
+            title: "Account suspended",
+            message: reason
+                ? `Your account was suspended. Reason: ${reason}`
+                : "Your account was suspended by admin.",
+            type: "ERROR",
+        },
+    };
+
+    const payload = statusMessages[status] || {
+        title: "Account status updated",
+        message: `Your account status is now ${status}`,
+        type: "INFO",
+    };
+
+    await notificationService.notifySafe(userId, payload);
 
     return {
         id: user._id,

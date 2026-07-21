@@ -1,6 +1,7 @@
 const UserReward = require("./model");
 const { computeExpiresAt, formatUserReward } = require("./mapper");
 const coinService = require("../coins/service");
+const notificationService = require("../notification/service");
 const ApiError = require("../../utils/ApiError");
 
 const expireStaleRewards = async (userId) => {
@@ -63,7 +64,24 @@ exports.grantReward = async ({
             source: coinSource,
             referenceId: String(reward._id),
             description: `Won ${value} coins: ${prize.title}`,
-            notify: true,
+            notify: false,
+        });
+    }
+
+    if (prize.prizeType !== "NO_PRIZE") {
+        const isAdminGrant = source === "ADMIN" || Boolean(grantedBy);
+        const title = isAdminGrant
+            ? "Reward from admin"
+            : "New reward unlocked";
+        const message =
+            prize.prizeType === "COINS"
+                ? `You received ${value} coins — ${prize.title}`
+                : `You received: ${prize.title}${value ? ` (₹${value})` : ""}`;
+
+        await notificationService.notifySafe(userId, {
+            title,
+            message,
+            type: "SUCCESS",
         });
     }
 
@@ -214,19 +232,32 @@ exports.claimReward = async (userId, rewardId) => {
                 source: "REWARD",
                 referenceId: String(reward._id),
                 description: `Claimed ${reward.value} coins: ${reward.prizeTitle}`,
-                notify: true,
+                notify: false,
             });
         }
 
         reward.status = "CLAIMED";
         reward.claimedAt = new Date();
         await reward.save();
+
+        await notificationService.notifySafe(userId, {
+            title: "Reward claimed",
+            message: `You claimed ${reward.value} coins from ${reward.prizeTitle}`,
+            type: "SUCCESS",
+        });
+
         return formatUserReward(reward);
     }
 
     reward.status = "CLAIMED";
     reward.claimedAt = new Date();
     await reward.save();
+
+    await notificationService.notifySafe(userId, {
+        title: "Reward claimed",
+        message: `You claimed: ${reward.prizeTitle}`,
+        type: "SUCCESS",
+    });
 
     return formatUserReward(reward);
 };

@@ -121,15 +121,14 @@ exports.creditCoins = async (
         }
 
         if (notify && ownSession) {
-            try {
-                await notificationService.create(userId, {
-                    title: "Coins received",
-                    message: `You received ${value} coins`,
-                    type: "SUCCESS",
-                });
-            } catch (err) {
-                console.error("Coin credit notification failed:", err.message);
-            }
+            await notificationService.notifySafe(userId, {
+                title:
+                    source === "ADMIN" || source === "TRANSFER"
+                        ? "Coins received from admin"
+                        : "Coins received",
+                message: `You received ${value} coins`,
+                type: "SUCCESS",
+            });
         }
 
         return {
@@ -155,6 +154,7 @@ exports.debitCoins = async (
         description = "Coins debited",
         referenceId = null,
         source = "OTHER",
+        notify = true,
     },
     session = null
 ) => {
@@ -213,6 +213,17 @@ exports.debitCoins = async (
 
         if (ownSession) {
             await session.commitTransaction();
+        }
+
+        if (notify && ownSession) {
+            await notificationService.notifySafe(userId, {
+                title:
+                    source === "ADMIN"
+                        ? "Coins deducted by admin"
+                        : "Coins deducted",
+                message: `${value} coins were deducted from your account`,
+                type: "WARNING",
+            });
         }
 
         return {
