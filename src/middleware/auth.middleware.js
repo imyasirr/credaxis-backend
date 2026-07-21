@@ -2,8 +2,8 @@ const { verifyToken } = require("../utils/jwt");
 const ApiError = require("../utils/ApiError");
 const MESSAGES = require("../constants/messages");
 const ROLES = require("../constants/roles");
-const userRepository = require("../modules/user/user.repository");
-const roleRepository = require("../modules/role/role.repository");
+const userRepository = require("../modules/user/repository");
+const roleRepository = require("../modules/role/repository");
 const {
     canAuthenticate,
     STATUS_MESSAGES,

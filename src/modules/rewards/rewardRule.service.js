@@ -3,9 +3,9 @@ const RewardRule = require("./rewardRule.model");
 const WheelPrize = require("./wheelPrize.model");
 const ScratchPrize = require("./scratchPrize.model");
 const ShufflePrize = require("./shufflePrize.model");
-const UserReward = require("./userReward.model");
-const User = require("../user/user.model");
-const { grantReward } = require("./userReward.service");
+const UserReward = require("./model");
+const User = require("../user/model");
+const { grantReward } = require("./service");
 const {
     formatRewardRule,
     getRewardRuleMeta,

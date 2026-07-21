@@ -61,7 +61,12 @@ const createUploader = ({ folder, fieldName, multiple = false, maxCount = 1 }) =
             }
 
             if (err.code === "LIMIT_FILE_SIZE") {
-                next(new ApiError(400, "Image size must be under 2MB"));
+                next(
+                    new ApiError(
+                        400,
+                        "Image is too large. Maximum allowed size is 2 MB."
+                    )
+                );
                 return;
             }
 
@@ -69,13 +74,24 @@ const createUploader = ({ folder, fieldName, multiple = false, maxCount = 1 }) =
                 next(
                     new ApiError(
                         400,
-                        `Unexpected file field "${err.field}". Use the documented field names.`
+                        `Unexpected file field "${err.field}". Use the "avatar" field for profile photos.`
                     )
                 );
                 return;
             }
 
-            next(new ApiError(400, err.message));
+            const message = String(err.message || "").trim();
+            if (/file too large|entity too large|request entity too large/i.test(message)) {
+                next(
+                    new ApiError(
+                        400,
+                        "Image is too large. Maximum allowed size is 2 MB."
+                    )
+                );
+                return;
+            }
+
+            next(new ApiError(400, message || "Invalid image upload"));
         });
     };
 };

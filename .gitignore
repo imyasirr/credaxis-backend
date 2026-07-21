@@ -4,3 +4,5 @@ public/uploads/partner/*
 !public/uploads/avatars/.gitkeep
 !public/uploads/kyc/.gitkeep
 !public/uploads/partner/.gitkeep
+.env
+.env.example

@@ -1,5 +1,5 @@
 const mongoose = require("mongoose");
-const Partner = require("../partner/partner.model");
+const Partner = require("../partner/model");
 const TokenTransfer = require("./tokenTransfer.model");
 const PartnerTokenBalance = require("./partnerTokenBalance.model");
 const {

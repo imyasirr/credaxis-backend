@@ -1,12 +1,12 @@
 const mongoose = require("mongoose");
 
-const CreditToken = require("./creditToken.model");
+const CreditToken = require("./model");
 const TokenPurchase = require("./tokenPurchase.model");
-const Partner = require("../partner/partner.model");
-const walletService = require("../wallet/wallet.service");
-const notificationService = require("../notification/notification.service");
+const Partner = require("../partner/model");
+const walletService = require("../wallet/service");
+const notificationService = require("../notification/service");
 const { creditPartnerBalance } = require("./tokenTransfer.service");
-const { formatCreditToken } = require("./creditToken.mapper");
+const { formatCreditToken } = require("./mapper");
 const { formatTokenPurchase } = require("./tokenPurchase.mapper");
 const ApiError = require("../../utils/ApiError");
 

@@ -1,8 +1,8 @@
-const userProfileRepository = require("./userProfile.repository");
-const userRepository = require("./user.repository");
-const userReferralService = require("./userReferral.service");
+const userProfileRepository = require("./profile.repository");
+const userRepository = require("./repository");
+const userReferralService = require("./referral.service");
 const ApiError = require("../../utils/ApiError");
-const { formatProfile } = require("./user.mapper");
+const { formatProfile } = require("./mapper");
 const {
     getAvatarPath,
     deleteAvatarFile,
@@ -43,7 +43,7 @@ exports.getMyProfile = async (userId) => {
     }
 
     const referral = await userReferralService.getMyReferralInfo(userId);
-    const kycService = require("../kyc/kyc.service");
+    const kycService = require("../kyc/service");
     const kyc = await kycService.getMyKyc(userId);
 
     return {
