@@ -13,8 +13,7 @@ const {
 
 /**
  * Auth middleware: verify JWT, then load latest role + status from DB.
- * Role is not trusted from the token alone — after partner approve
- * (or any role change) the same token picks up the new role.
+ * Partner access is separate: Partner.status === APPROVED (User.role stays USER).
  *
  * BLOCKED / INACTIVE → no API access.
  * SUSPENDED → limited access (enforced via requireAction on routes).
@@ -45,9 +44,24 @@ module.exports = async (req, res, next) => {
             throw err;
         }
 
-        const role = await roleRepository.findById(user.role);
+        let role = await roleRepository.findById(user.role);
         if (!role) {
             throw new ApiError(401, MESSAGES.UNAUTHORIZED);
+        }
+
+        const { getPartnerAccess } = require("../modules/partner/access");
+        const partnerAccess = await getPartnerAccess(user._id);
+
+        // Lazy migrate: old flow set role=PARTNER on approve. Restore USER role
+        // so the user app keeps working; partner access uses Partner.status.
+        if (role.name === ROLES.PARTNER && partnerAccess.isApproved) {
+            const userRole = await roleRepository.getUserRole();
+            if (userRole) {
+                await userRepository.update(user._id, {
+                    role: userRole._id,
+                });
+                role = userRole;
+            }
         }
 
         if (
@@ -64,6 +78,8 @@ module.exports = async (req, res, next) => {
             id: user._id.toString(),
             role: role.name,
             status: user.status,
+            isApprovedPartner: partnerAccess.isApproved,
+            partnerStatus: partnerAccess.status,
         };
 
         next();

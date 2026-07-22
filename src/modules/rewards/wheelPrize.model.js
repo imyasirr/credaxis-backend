@@ -16,7 +16,7 @@ const wheelPrizeSchema = new mongoose.Schema(
 
         prizeType: {
             type: String,
-            enum: ["CASH", "TOKEN", "COUPON", "NO_PRIZE"],
+            enum: ["CASH", "TOKEN", "COUPON", "COINS", "NO_PRIZE"],
             required: true,
             index: true,
         },

@@ -53,12 +53,19 @@ exports.getReferralLink = asyncHandler(async (req, res) => {
 });
 
 exports.getReferralStats = asyncHandler(async (req, res) => {
-    const data = await partnerService.getReferralStats(req.user.id);
+    const data = await partnerService.getReferralStats(
+        req.user.id,
+        req.user.role
+    );
     return response.success(res, "Referral stats fetched", data);
 });
 
 exports.getReferrals = asyncHandler(async (req, res) => {
-    const data = await partnerService.getReferrals(req.user.id, req.query);
+    const data = await partnerService.getReferrals(
+        req.user.id,
+        req.query,
+        req.user.role
+    );
     return response.success(res, "Referrals fetched successfully", data);
 });
 

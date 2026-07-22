@@ -26,7 +26,10 @@ const TRIGGER_META = {
 const AUDIENCE_META = {
     ALL: { label: "All users", help: "Anyone who hits the trigger" },
     USER: { label: "App users only", help: "Role = USER" },
-    PARTNER: { label: "Partners only", help: "Role = PARTNER" },
+    PARTNER: {
+        label: "Approved partners only",
+        help: "Users with Partner.status = APPROVED (role stays USER)",
+    },
     SPECIFIC: {
         label: "Specific users",
         help: "Only selected user IDs / mobiles",

@@ -106,13 +106,19 @@ const getRoleName = (user) => {
     return null;
 };
 
-const matchesAudience = (rule, user) => {
+const matchesAudience = (rule, user, { isApprovedPartner = false } = {}) => {
     const audience = rule.audience || "ALL";
     if (audience === "ALL") return true;
 
     const roleName = getRoleName(user);
-    if (audience === "USER") return roleName === "USER";
-    if (audience === "PARTNER") return roleName === "PARTNER";
+    // Approved partners keep role USER — still eligible for USER audience rewards
+    if (audience === "USER") {
+        return roleName === "USER" || roleName === "PARTNER";
+    }
+    // Partner audience = approved Partner application (not just role name)
+    if (audience === "PARTNER") {
+        return isApprovedPartner || roleName === "PARTNER";
+    }
 
     if (audience === "SPECIFIC") {
         const ids = (rule.userIds || []).map((id) => id.toString());
@@ -150,6 +156,9 @@ exports.applyTrigger = async (trigger, userId, { skipManual = true } = {}) => {
         .populate("role", "name");
     if (!user || user.isDeleted) return [];
 
+    const { getPartnerAccess } = require("../partner/access");
+    const partnerAccess = await getPartnerAccess(userId);
+
     const rules = await RewardRule.find({
         trigger: String(trigger).toUpperCase(),
         enabled: true,
@@ -159,7 +168,13 @@ exports.applyTrigger = async (trigger, userId, { skipManual = true } = {}) => {
 
     for (const rule of rules) {
         if (!isWithinSchedule(rule)) continue;
-        if (!matchesAudience(rule, user)) continue;
+        if (
+            !matchesAudience(rule, user, {
+                isApprovedPartner: partnerAccess.isApproved,
+            })
+        ) {
+            continue;
+        }
         if (!(await canGrantToUser(rule, userId))) continue;
 
         const prize = await exports.resolveActivePrize(

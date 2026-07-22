@@ -1,6 +1,6 @@
-const userProfileRepository = require("./profile.repository");
+const profileRepository = require("./profile.repository");
 const userRepository = require("./repository");
-const userReferralService = require("./referral.service");
+const referralService = require("./referral.service");
 const ApiError = require("../../utils/ApiError");
 const { formatProfile } = require("./mapper");
 const {
@@ -30,8 +30,7 @@ const buildProfileData = (body, avatarFile) => {
 };
 
 exports.getMyProfile = async (userId) => {
-    const profile = await userProfileRepository.findByUserId(userId);
-
+    const profile = await profileRepository.findByUserId(userId);
     if (!profile) {
         throw new ApiError(404, "Profile not found");
     }
@@ -42,9 +41,18 @@ exports.getMyProfile = async (userId) => {
         await user.save();
     }
 
-    const referral = await userReferralService.getMyReferralInfo(userId);
-    const kycService = require("../kyc/service");
-    const kyc = await kycService.getMyKyc(userId);
+    const [referral, kyc] = await Promise.all([
+        referralService.getMyReferralInfo(userId),
+        require("../kyc/service").getMyKyc(userId),
+    ]);
+
+    const {
+        getPartnerAccess,
+        formatPartnerAccount,
+    } = require("../partner/access");
+    const partnerAccount = formatPartnerAccount(
+        await getPartnerAccess(userId)
+    );
 
     return {
         ...formatProfile(profile),
@@ -52,20 +60,12 @@ exports.getMyProfile = async (userId) => {
         countryCode: user?.countryCode || "+91",
         referral,
         kyc,
+        partnerAccount,
     };
 };
 
-exports.getMyReferralLink = async (userId) => {
-    return userReferralService.getMyReferralInfo(userId);
-};
-
-exports.getMyReferrals = async (userId, query) => {
-    return userReferralService.getMyReferrals(userId, query);
-};
-
 exports.completeProfile = async (userId, body, avatarFile) => {
-    const profile = await userProfileRepository.findByUserId(userId);
-
+    const profile = await profileRepository.findByUserId(userId);
     if (!profile) {
         throw new ApiError(404, "Profile not found");
     }
@@ -81,14 +81,12 @@ exports.completeProfile = async (userId, body, avatarFile) => {
     const data = buildProfileData(body, avatarFile);
     data.isProfileComplete = true;
 
-    const updated = await userProfileRepository.updateByUserId(userId, data);
-
+    const updated = await profileRepository.updateByUserId(userId, data);
     return formatProfile(updated);
 };
 
 exports.updateProfile = async (userId, body, avatarFile) => {
-    const profile = await userProfileRepository.findByUserId(userId);
-
+    const profile = await profileRepository.findByUserId(userId);
     if (!profile) {
         throw new ApiError(404, "Profile not found");
     }
@@ -107,14 +105,12 @@ exports.updateProfile = async (userId, body, avatarFile) => {
         data.isProfileComplete = true;
     }
 
-    const updated = await userProfileRepository.updateByUserId(userId, data);
-
+    const updated = await profileRepository.updateByUserId(userId, data);
     return formatProfile(updated);
 };
 
 exports.deleteAvatar = async (userId) => {
-    const profile = await userProfileRepository.findByUserId(userId);
-
+    const profile = await profileRepository.findByUserId(userId);
     if (!profile) {
         throw new ApiError(404, "Profile not found");
     }
@@ -125,9 +121,16 @@ exports.deleteAvatar = async (userId) => {
 
     deleteAvatarFile(profile.avatar);
 
-    const updated = await userProfileRepository.updateByUserId(userId, {
+    const updated = await profileRepository.updateByUserId(userId, {
         avatar: null,
     });
-
     return formatProfile(updated);
+};
+
+exports.getMyReferralLink = async (userId, roleName) => {
+    return referralService.getMyReferralInfo(userId, roleName);
+};
+
+exports.getMyReferrals = async (userId, query, roleName) => {
+    return referralService.getMyReferrals(userId, query, roleName);
 };

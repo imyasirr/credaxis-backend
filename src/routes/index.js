@@ -3,7 +3,7 @@ const express = require("express");
 const router = express.Router();
 
 router.use("/auth", require("../modules/auth/routes"));
-router.use("/profile", require("../modules/user/profile.routes"));
+router.use("/user", require("../modules/user/routes"));
 router.use("/wallet", require("../modules/wallet/routes"));
 router.use("/coins", require("../modules/coins/routes"));
 router.use("/kyc", require("../modules/kyc/routes"));

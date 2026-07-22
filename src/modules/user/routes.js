@@ -1,7 +1,7 @@
 const express = require("express");
 
-const profileController = require("./profile.controller");
-const profileValidator = require("./profile.validator");
+const controller = require("./controller");
+const validator = require("./validator");
 const auth = require("../../middleware/auth.middleware");
 const requireAction = require("../../middleware/requireAction.middleware");
 const validate = require("../../middleware/validation.middleware");
@@ -15,45 +15,47 @@ router.use(auth);
 router.get(
     "/",
     requireAction(ACTIONS.PROFILE_READ),
-    profileController.getMyProfile
-);
-
-router.get(
-    "/referral",
-    requireAction(ACTIONS.REFERRAL_READ),
-    profileController.getMyReferralLink
-);
-
-router.get(
-    "/referrals",
-    requireAction(ACTIONS.REFERRAL_READ),
-    profileValidator.getReferrals,
-    validate,
-    profileController.getMyReferrals
+    controller.getMyProfile
 );
 
 router.post(
     "/complete",
     requireAction(ACTIONS.PROFILE_WRITE),
     uploadAvatar,
-    profileValidator.complete,
+    validator.complete,
     validate,
-    profileController.completeProfile
+    controller.completeProfile
 );
 
 router.put(
     "/",
     requireAction(ACTIONS.PROFILE_WRITE),
     uploadAvatar,
-    profileValidator.update,
+    validator.update,
     validate,
-    profileController.updateProfile
+    controller.updateProfile
 );
 
 router.delete(
     "/avatar",
     requireAction(ACTIONS.PROFILE_WRITE),
-    profileController.deleteAvatar
+    controller.deleteAvatar
+);
+
+/** Referral summary / share code — USER + PARTNER (role auto-detected) */
+router.get(
+    "/referral-link",
+    requireAction(ACTIONS.REFERRAL_READ),
+    controller.getMyReferralLink
+);
+
+/** Unified referrals list — USER sees USR; PARTNER sees USR + PRT */
+router.get(
+    "/referrals",
+    requireAction(ACTIONS.REFERRAL_READ),
+    validator.getReferrals,
+    validate,
+    controller.getMyReferrals
 );
 
 module.exports = router;

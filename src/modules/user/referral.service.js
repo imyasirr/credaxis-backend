@@ -1,19 +1,14 @@
 const User = require("./model");
 const UserProfile = require("./profile.model");
 const UserReferral = require("./referral.model");
-const Setting = require("../admin/setting.model");
-const WheelPrize = require("../rewards/wheelPrize.model");
-const ScratchPrize = require("../rewards/scratchPrize.model");
-const ShufflePrize = require("../rewards/shufflePrize.model");
-const { grantReward } = require("../rewards/service");
 const {
     formatUserReferral,
+    formatPartnerOwnedReferral,
     formatReferralSummary,
 } = require("./referral.mapper");
 const { ensureUserReferralCode } = require("../../utils/generateReferralCode");
 const ApiError = require("../../utils/ApiError");
-
-const SETTING_KEY = "USER_REFERRAL";
+const ROLES = require("../../constants/roles");
 
 const DEFAULT_SETTING = {
     enabled: false,
@@ -29,160 +24,30 @@ const DEFAULT_SETTING = {
     },
 };
 
-const PRIZE_MODELS = {
-    WHEEL: WheelPrize,
-    SCRATCH: ScratchPrize,
-    SHUFFLE: ShufflePrize,
-};
-
-const getPrizeModel = (gameType) => {
-    const model = PRIZE_MODELS[String(gameType || "").toUpperCase()];
-    if (!model) {
-        throw new ApiError(400, "gameType must be WHEEL, SCRATCH or SHUFFLE");
-    }
-    return model;
-};
-
 exports.getReferralSetting = async () => {
-    const setting = await Setting.findOne({ key: SETTING_KEY });
-    if (!setting) {
-        return { ...DEFAULT_SETTING };
-    }
+    // Legacy settings kept for API compatibility — rewards now come only from Reward Management rules.
     return {
         ...DEFAULT_SETTING,
-        ...setting.value,
-        referrerReward: {
-            ...DEFAULT_SETTING.referrerReward,
-            ...(setting.value?.referrerReward || {}),
-        },
-        refereeReward: {
-            ...DEFAULT_SETTING.refereeReward,
-            ...(setting.value?.refereeReward || {}),
-        },
+        enabled: false,
+        deprecated: true,
+        message:
+            "Referral rewards are managed in Reward Management (REFERRAL_REFERRER / REFERRAL_REFEREE rules).",
     };
 };
 
-exports.updateReferralSetting = async (body) => {
-    const current = await exports.getReferralSetting();
-
-    const next = {
-        enabled: body.enabled !== undefined ? Boolean(body.enabled) : current.enabled,
-        referrerReward: {
-            enabled:
-                body.referrerReward?.enabled !== undefined
-                    ? Boolean(body.referrerReward.enabled)
-                    : current.referrerReward.enabled,
-            gameType: String(
-                body.referrerReward?.gameType || current.referrerReward.gameType
-            ).toUpperCase(),
-            prizeId:
-                body.referrerReward?.prizeId !== undefined
-                    ? body.referrerReward.prizeId || null
-                    : current.referrerReward.prizeId,
-        },
-        refereeReward: {
-            enabled:
-                body.refereeReward?.enabled !== undefined
-                    ? Boolean(body.refereeReward.enabled)
-                    : current.refereeReward.enabled,
-            gameType: String(
-                body.refereeReward?.gameType || current.refereeReward.gameType
-            ).toUpperCase(),
-            prizeId:
-                body.refereeReward?.prizeId !== undefined
-                    ? body.refereeReward.prizeId || null
-                    : current.refereeReward.prizeId,
-        },
-    };
-
-    for (const side of ["referrerReward", "refereeReward"]) {
-        const cfg = next[side];
-        if (!["WHEEL", "SCRATCH", "SHUFFLE"].includes(cfg.gameType)) {
-            throw new ApiError(400, `${side}.gameType must be WHEEL, SCRATCH or SHUFFLE`);
-        }
-        if (cfg.enabled && cfg.prizeId) {
-            const prize = await getPrizeModel(cfg.gameType).findById(cfg.prizeId);
-            if (!prize || prize.status !== "ACTIVE") {
-                throw new ApiError(
-                    400,
-                    `${side}: selected prize not found or inactive`
-                );
-            }
-        }
-    }
-
-    await Setting.findOneAndUpdate(
-        { key: SETTING_KEY },
-        {
-            key: SETTING_KEY,
-            value: next,
-            description:
-                "User-to-user referral rewards (spin / scratch / shuffle)",
-        },
-        { upsert: true, new: true }
+exports.updateReferralSetting = async () => {
+    throw new ApiError(
+        400,
+        "User referral settings are deprecated. Configure REFERRAL_REFERRER and REFERRAL_REFEREE rules in Reward Management instead."
     );
-
-    return next;
 };
 
-const resolvePrize = async (cfg) => {
-    if (!cfg?.enabled || !cfg.prizeId) return null;
-    const prize = await getPrizeModel(cfg.gameType).findById(cfg.prizeId);
-    if (!prize || prize.status !== "ACTIVE") return null;
-    return { gameType: cfg.gameType, prize };
-};
-
-const grantConfiguredRewards = async (referrerId, refereeId, setting) => {
-    let referrerRewardId = null;
-    let refereeRewardId = null;
-
-    if (!setting.enabled) {
-        return { referrerRewardId, refereeRewardId };
-    }
-
-    const { canEarnReferral } = require("../../constants/userStatusPolicy");
-    const referrer = await User.findById(referrerId).select("status isDeleted");
-
-    const referrerPrize = await resolvePrize(setting.referrerReward);
-    if (
-        referrerPrize &&
-        referrer &&
-        !referrer.isDeleted &&
-        canEarnReferral(referrer.status)
-    ) {
-        const reward = await grantReward({
-            userId: referrerId,
-            gameType: referrerPrize.gameType,
-            prize: referrerPrize.prize,
-            source: "REFERRAL",
-        });
-        referrerRewardId = reward.id;
-    }
-
-    const refereePrize = await resolvePrize(setting.refereeReward);
-    if (refereePrize) {
-        const reward = await grantReward({
-            userId: refereeId,
-            gameType: refereePrize.gameType,
-            prize: refereePrize.prize,
-            source: "REFERRAL",
-        });
-        refereeRewardId = reward.id;
-    }
-
-    return { referrerRewardId, refereeRewardId };
-};
-
-/** Used by user referral AND partner referral signup. */
+/**
+ * Used by user referral AND partner referral signup.
+ * Grants only via Reward Management rules (REFERRAL_REFERRER / REFERRAL_REFEREE).
+ * Legacy USER_REFERRAL settings are no longer applied (avoids double rewards).
+ */
 exports.applyReferralRewards = async (referrerUserId, refereeUserId) => {
-    const setting = await exports.getReferralSetting();
-    const fromSettings = await grantConfiguredRewards(
-        referrerUserId,
-        refereeUserId,
-        setting
-    );
-
-    // Also apply Reward Management rules for referral triggers
     const rewardRuleService = require("../rewards/rewardRule.service");
     const [referrerRules, refereeRules] = await Promise.all([
         rewardRuleService.applyTrigger("REFERRAL_REFERRER", referrerUserId),
@@ -190,7 +55,8 @@ exports.applyReferralRewards = async (referrerUserId, refereeUserId) => {
     ]);
 
     return {
-        ...fromSettings,
+        referrerRewardId: referrerRules[0]?.id || null,
+        refereeRewardId: refereeRules[0]?.id || null,
         ruleRewards: {
             referrer: referrerRules,
             referee: refereeRules,
@@ -258,7 +124,7 @@ exports.linkUserReferral = async (referralCode, newUserId) => {
     newUser.referredBy = referrer._id;
     await newUser.save();
 
-    // Settings prizes + Reward Management rules (REFERRAL_*)
+    // Settings prizes removed — only Reward Management rules (REFERRAL_*)
     const granted = await exports.applyReferralRewards(
         referrer._id,
         newUserId
@@ -293,16 +159,41 @@ exports.linkUserReferral = async (referralCode, newUserId) => {
     return referrer;
 };
 
-exports.getMyReferralInfo = async (userId) => {
-    const user = await User.findById(userId);
+exports.getMyReferralInfo = async (userId, roleName = null) => {
+    const user = await User.findById(userId).populate("role", "name");
     if (!user) {
         throw new ApiError(404, "User not found");
     }
+
+    const role =
+        roleName ||
+        (typeof user.role === "object" && user.role?.name
+            ? user.role.name
+            : null) ||
+        ROLES.USER;
 
     const referralCode = await ensureUserReferralCode(user);
     const referralCount = await UserReferral.countDocuments({
         referrer: userId,
     });
+
+    let partnerCode = null;
+    let partnerReferralCount = 0;
+
+    const { getPartnerAccess } = require("../partner/access");
+    const partnerAccess = await getPartnerAccess(userId);
+    const isPartner =
+        partnerAccess.isApproved || role === ROLES.PARTNER;
+
+    if (isPartner) {
+        partnerCode = partnerAccess.partnerCode;
+        if (partnerAccess.isApproved) {
+            const PartnerReferral = require("../partner/referral.model");
+            partnerReferralCount = await PartnerReferral.countDocuments({
+                partnerUser: userId,
+            });
+        }
+    }
 
     let referredBy = null;
     if (user.referredBy) {
@@ -329,47 +220,120 @@ exports.getMyReferralInfo = async (userId) => {
     return formatReferralSummary({
         referralCode,
         referralCount,
+        partnerCode,
+        partnerReferralCount,
         referredBy,
     });
 };
 
-exports.getMyReferrals = async (userId, query = {}) => {
+/**
+ * Unified referrals list for the logged-in caller.
+ * - USER → personal USR referrals
+ * - PARTNER → personal USR referrals + PRT partner referrals
+ * Optional query.source = USER | PARTNER
+ */
+exports.getMyReferrals = async (userId, query = {}, roleName = null) => {
     const page = Number(query.page) || 1;
     const limit = Number(query.limit) || 15;
     const skip = (page - 1) * limit;
+    const sourceFilter = String(query.source || "").toUpperCase();
 
-    const [records, total] = await Promise.all([
-        UserReferral.find({ referrer: userId })
-            .populate("referredUser", "mobile email status")
-            .sort({ createdAt: -1 })
-            .skip(skip)
-            .limit(limit),
-        UserReferral.countDocuments({ referrer: userId }),
-    ]);
+    let role = roleName;
+    if (!role) {
+        const user = await User.findById(userId).populate("role", "name");
+        role =
+            typeof user?.role === "object" && user.role?.name
+                ? user.role.name
+                : ROLES.USER;
+    }
 
-    const userIds = records
+    const { getPartnerAccess } = require("../partner/access");
+    const partnerAccess = await getPartnerAccess(userId);
+    const isApprovedPartner =
+        partnerAccess.isApproved || role === ROLES.PARTNER;
+
+    const includeUser = sourceFilter !== "PARTNER";
+    const includePartner = isApprovedPartner && sourceFilter !== "USER";
+
+    const fetchSize = Math.max(skip + limit, limit);
+
+    let userRecords = [];
+    let partnerRecords = [];
+    let userTotal = 0;
+    let partnerTotal = 0;
+
+    if (includeUser) {
+        [userRecords, userTotal] = await Promise.all([
+            UserReferral.find({ referrer: userId })
+                .populate("referredUser", "mobile email status")
+                .sort({ createdAt: -1 })
+                .limit(fetchSize),
+            UserReferral.countDocuments({ referrer: userId }),
+        ]);
+    }
+
+    if (includePartner) {
+        const PartnerReferral = require("../partner/referral.model");
+        [partnerRecords, partnerTotal] = await Promise.all([
+            PartnerReferral.find({ partnerUser: userId })
+                .populate("referredUser", "mobile email status")
+                .sort({ createdAt: -1 })
+                .limit(fetchSize),
+            PartnerReferral.countDocuments({ partnerUser: userId }),
+        ]);
+    }
+
+    const referredIds = [
+        ...userRecords,
+        ...partnerRecords,
+    ]
         .map((r) => r.referredUser?._id || r.referredUser)
         .filter(Boolean);
 
-    const profiles = await UserProfile.find({ user: { $in: userIds } });
+    const profiles = await UserProfile.find({ user: { $in: referredIds } });
     const profileMap = Object.fromEntries(
         profiles.map((p) => [p.user.toString(), p])
     );
 
-    return {
-        referrals: records.map((item) => {
-            const uid = (
-                item.referredUser?._id || item.referredUser
-            )?.toString();
-            return formatUserReferral(item, profileMap[uid]);
-        }),
+    const userMapped = userRecords.map((item) => {
+        const uid = (item.referredUser?._id || item.referredUser)?.toString();
+        return formatUserReferral(item, profileMap[uid]);
+    });
+
+    const partnerMapped = partnerRecords.map((item) => {
+        const uid = (item.referredUser?._id || item.referredUser)?.toString();
+        return formatPartnerOwnedReferral(item, profileMap[uid]);
+    });
+
+    const merged = [...userMapped, ...partnerMapped].sort(
+        (a, b) => new Date(b.createdAt) - new Date(a.createdAt)
+    );
+
+    const total = userTotal + partnerTotal;
+    const referrals = merged.slice(skip, skip + limit);
+
+    const result = {
+        role,
+        isApprovedPartner,
+        referrals,
+        counts: {
+            user: userTotal,
+            partner: partnerTotal,
+            total,
+        },
         pagination: {
             page,
             limit,
             total,
-            totalPages: Math.ceil(total / limit),
+            totalPages: Math.ceil(total / limit) || 0,
         },
     };
+
+    if (partnerAccess.partnerCode) {
+        result.partnerCode = partnerAccess.partnerCode;
+    }
+
+    return result;
 };
 
 /** Admin: recent referrals — USER (USR) + PARTNER (PRT) */

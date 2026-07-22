@@ -4,6 +4,7 @@ const partnerController = require("./controller");
 const partnerValidator = require("./validator");
 const auth = require("../../middleware/auth.middleware");
 const authorize = require("../../middleware/role.middleware");
+const requireApprovedPartner = require("../../middleware/requireApprovedPartner.middleware");
 const requireAction = require("../../middleware/requireAction.middleware");
 const validate = require("../../middleware/validation.middleware");
 const { uploadPartnerDocs } = require("../../middleware/upload.middleware");
@@ -69,52 +70,54 @@ router.put(
     partnerController.updateApplication
 );
 
+// Approved partner app surfaces (User.role stays USER)
 router.get(
     "/dashboard",
     requireAction(ACTIONS.PARTNER_READ),
-    authorize(ROLES.PARTNER),
+    requireApprovedPartner,
     partnerController.getDashboard
 );
 
 router.get(
     "/referral-link",
     requireAction(ACTIONS.REFERRAL_READ),
-    authorize(ROLES.PARTNER),
+    requireApprovedPartner,
     partnerController.getReferralLink
 );
 
 router.get(
     "/referrals/stats",
     requireAction(ACTIONS.REFERRAL_READ),
-    authorize(ROLES.PARTNER),
+    requireApprovedPartner,
     partnerController.getReferralStats
 );
 
+/** Alias of GET /api/user/referrals (unified USER + PARTNER list) */
 router.get(
     "/referrals",
     requireAction(ACTIONS.REFERRAL_READ),
-    authorize(ROLES.PARTNER),
+    requireApprovedPartner,
     partnerController.getReferrals
 );
 
 router.get(
     "/token-balances",
     requireAction(ACTIONS.PARTNER_READ),
-    authorize(ROLES.PARTNER),
+    requireApprovedPartner,
     partnerController.getMyTokenBalances
 );
 
 router.get(
     "/token-transfers",
     requireAction(ACTIONS.PARTNER_READ),
-    authorize(ROLES.PARTNER),
+    requireApprovedPartner,
     partnerController.getMyTokenTransfers
 );
 
 router.get(
     "/token-plans",
     requireAction(ACTIONS.PARTNER_READ),
-    authorize(ROLES.PARTNER),
+    requireApprovedPartner,
     partnerValidator.getTokenPlans,
     validate,
     partnerController.getTokenPlans
@@ -123,7 +126,7 @@ router.get(
 router.post(
     "/token-purchases",
     requireAction(ACTIONS.PARTNER_WRITE),
-    authorize(ROLES.PARTNER),
+    requireApprovedPartner,
     partnerValidator.purchaseTokens,
     validate,
     partnerController.purchaseTokens
@@ -132,7 +135,7 @@ router.post(
 router.get(
     "/token-purchases",
     requireAction(ACTIONS.PARTNER_READ),
-    authorize(ROLES.PARTNER),
+    requireApprovedPartner,
     partnerValidator.getTokenPurchases,
     validate,
     partnerController.getMyTokenPurchases
@@ -141,14 +144,14 @@ router.get(
 router.get(
     "/token-purchases/:id",
     requireAction(ACTIONS.PARTNER_READ),
-    authorize(ROLES.PARTNER),
+    requireApprovedPartner,
     partnerController.getMyTokenPurchaseById
 );
 
 router.post(
     "/token-purchases/:id/verify-payment",
     requireAction(ACTIONS.PARTNER_WRITE),
-    authorize(ROLES.PARTNER),
+    requireApprovedPartner,
     partnerValidator.verifyOnlinePayment,
     validate,
     partnerController.verifyOnlinePayment

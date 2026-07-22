@@ -7,14 +7,9 @@ exports.complete = [
         .trim()
         .isLength({ min: 2, max: 50 }),
 
-    body("lastName")
-        .optional()
-        .trim()
-        .isLength({ max: 50 }),
+    body("lastName").optional().trim().isLength({ max: 50 }),
 
-    body("gender")
-        .optional()
-        .isIn(["MALE", "FEMALE", "OTHER"]),
+    body("gender").optional().isIn(["MALE", "FEMALE", "OTHER"]),
 
     body("dob").optional().isISO8601(),
 
@@ -34,19 +29,11 @@ exports.complete = [
 ];
 
 exports.update = [
-    body("firstName")
-        .optional()
-        .trim()
-        .isLength({ min: 2, max: 50 }),
+    body("firstName").optional().trim().isLength({ min: 2, max: 50 }),
 
-    body("lastName")
-        .optional()
-        .trim()
-        .isLength({ max: 50 }),
+    body("lastName").optional().trim().isLength({ max: 50 }),
 
-    body("gender")
-        .optional()
-        .isIn(["MALE", "FEMALE", "OTHER"]),
+    body("gender").optional().isIn(["MALE", "FEMALE", "OTHER"]),
 
     body("dob").optional().isISO8601(),
 
@@ -68,4 +55,10 @@ exports.update = [
 exports.getReferrals = [
     query("page").optional().isInt({ min: 1 }),
     query("limit").optional().isInt({ min: 1, max: 100 }),
+    query("source")
+        .optional()
+        .trim()
+        .toUpperCase()
+        .isIn(["USER", "PARTNER"])
+        .withMessage("source must be USER or PARTNER"),
 ];

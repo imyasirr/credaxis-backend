@@ -27,7 +27,13 @@ exports.formatProfile = (profile) => {
     };
 };
 
-exports.formatAuthUser = (user, profile, role, referral = null) => {
+exports.formatAuthUser = (
+    user,
+    profile,
+    role,
+    referral = null,
+    partnerAccount = null
+) => {
     const profileData = profile?.toObject?.() || profile || {};
     const {
         getAllowedActions,
@@ -58,6 +64,14 @@ exports.formatAuthUser = (user, profile, role, referral = null) => {
         referralCode: referral?.referralCode || user.referralCode || null,
         referralCount: referral?.referralCount ?? 0,
         referredBy: referral?.referredBy || null,
+        partnerAccount: partnerAccount || {
+            status: null,
+            isApproved: false,
+            partnerCode: null,
+            partnerAppUrl: null,
+            message: "You have not applied as a partner yet",
+            nextAction: "apply",
+        },
         createdAt: user.createdAt,
     };
 };

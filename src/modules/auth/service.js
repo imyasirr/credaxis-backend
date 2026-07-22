@@ -9,6 +9,7 @@ const otpRepository = require("./otp.repository");
 
 const ApiError = require("../../utils/ApiError");
 const MESSAGES = require("../../constants/messages");
+const ROLES = require("../../constants/roles");
 const { generateAccessToken } = require("../../utils/jwt");
 const { generateOtp, getOtpExpiry } = require("../../utils/generateOtp");
 const {
@@ -209,43 +210,56 @@ exports.verifyOtp = async (mobile, otp, { partnerCode, referralCode } = {}) => {
             profile = created.profile;
             role = created.role;
             isNewUser = true;
-
             await session.commitTransaction();
-
-            if (partnerCode) {
-                const linked = await partnerService.linkReferral(
-                    partnerCode,
-                    user._id
-                );
-
-                if (!linked) {
-                    throw new ApiError(400, "Invalid or inactive partner code");
-                }
-                // refresh after referredBy update
-                user = await userRepository.findById(user._id);
-            } else if (referralCode) {
-                const linked = await userReferralService.linkUserReferral(
-                    referralCode,
-                    user._id
-                );
-
-                if (!linked) {
-                    throw new ApiError(400, "Invalid or inactive referral code");
-                }
-                user = await userRepository.findById(user._id);
-            }
-
-            try {
-                const rewardRuleService = require("../rewards/rewardRule.service");
-                await rewardRuleService.applyTrigger("USER_SIGNUP", user._id);
-            } catch (err) {
-                console.error("USER_SIGNUP reward rules failed:", err.message);
-            }
         } catch (error) {
-            await session.abortTransaction();
+            if (session.inTransaction()) {
+                await session.abortTransaction();
+            }
             throw error;
         } finally {
             session.endSession();
+        }
+
+        // Referral / partner link AFTER commit (must not abort the create txn)
+        if (partnerCode) {
+            const code = String(partnerCode).trim().toUpperCase();
+            if (code.startsWith("USR")) {
+                throw new ApiError(
+                    400,
+                    "USR codes are user referral codes — send as referralCode, not partnerCode"
+                );
+            }
+            const linked = await partnerService.linkReferral(
+                partnerCode,
+                user._id
+            );
+            if (!linked) {
+                throw new ApiError(400, "Invalid or inactive partner code");
+            }
+            user = await userRepository.findById(user._id);
+        } else if (referralCode) {
+            const code = String(referralCode).trim().toUpperCase();
+            if (code.startsWith("PRT")) {
+                throw new ApiError(
+                    400,
+                    "PRT codes are partner codes — send as partnerCode, not referralCode"
+                );
+            }
+            const linked = await userReferralService.linkUserReferral(
+                referralCode,
+                user._id
+            );
+            if (!linked) {
+                throw new ApiError(400, "Invalid or inactive referral code");
+            }
+            user = await userRepository.findById(user._id);
+        }
+
+        try {
+            const rewardRuleService = require("../rewards/rewardRule.service");
+            await rewardRuleService.applyTrigger("USER_SIGNUP", user._id);
+        } catch (err) {
+            console.error("USER_SIGNUP reward rules failed:", err.message);
         }
     } else {
         user.isMobileVerified = true;
@@ -257,9 +271,32 @@ exports.verifyOtp = async (mobile, otp, { partnerCode, referralCode } = {}) => {
 
         profile = await userProfileRepository.findOne({ user: user._id });
         role = await roleRepository.findById(user.role);
+
+        // Old approve flow set role=PARTNER — restore USER (partner = Partner.status)
+        if (role?.name === ROLES.PARTNER) {
+            const { getPartnerAccess } = require("../partner/access");
+            const access = await getPartnerAccess(user._id);
+            if (access.isApproved) {
+                const userRole = await roleRepository.getUserRole();
+                if (userRole) {
+                    await userRepository.update(user._id, {
+                        role: userRole._id,
+                    });
+                    role = userRole;
+                    user.role = userRole._id;
+                }
+            }
+        }
     }
 
     const referral = await userReferralService.getMyReferralInfo(user._id);
+    const {
+        getPartnerAccess,
+        formatPartnerAccount,
+    } = require("../partner/access");
+    const partnerAccount = formatPartnerAccount(
+        await getPartnerAccess(user._id)
+    );
 
     return formatAuthPayload({
         isNewUser,
@@ -268,6 +305,6 @@ exports.verifyOtp = async (mobile, otp, { partnerCode, referralCode } = {}) => {
             id: user._id,
             role: role.name,
         }),
-        user: formatAuthUser(user, profile, role, referral),
+        user: formatAuthUser(user, profile, role, referral, partnerAccount),
     });
 };

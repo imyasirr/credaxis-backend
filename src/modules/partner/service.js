@@ -1,12 +1,10 @@
 const partnerRepository = require("./repository");
 const referralRepository = require("./referral.repository");
 const userRepository = require("../user/repository");
-const roleRepository = require("../role/repository");
 const notificationService = require("../notification/service");
 const UserProfile = require("../user/profile.model");
 
 const ApiError = require("../../utils/ApiError");
-const ROLES = require("../../constants/roles");
 const {
     formatPartner,
     formatReferralRecord,
@@ -115,16 +113,16 @@ exports.getRegistrationStatus = async (userId) => {
         throw new ApiError(404, "User not found");
     }
 
-    const role = await roleRepository.findById(user.role);
     const partner = await partnerRepository.findByUserId(userId);
 
-    if (role?.name === ROLES.PARTNER && partner?.status === "APPROVED") {
+    if (partner?.status === "APPROVED") {
         return formatRegistrationStatus({
             step: "APPROVED",
             canApply: false,
             canUpdate: false,
-            nextAction: "open_dashboard",
-            message: "You are an approved partner",
+            nextAction: "open_partner_app",
+            message:
+                "Your partner account is approved. Open the Partner app to continue",
             application: await attachKycToPartners(formatPartner(partner)),
         });
     }
@@ -166,7 +164,7 @@ exports.getRegistrationStatus = async (userId) => {
         step: partner.status,
         canApply: false,
         canUpdate: false,
-        nextAction: "open_dashboard",
+        nextAction: "open_partner_app",
         message: "Partner application status fetched",
         application: await attachKycToPartners(formatPartner(partner)),
     });
@@ -204,12 +202,6 @@ exports.apply = async (userId, body, files) => {
 
     if (!user) {
         throw new ApiError(404, "User not found");
-    }
-
-    const role = await roleRepository.findById(user.role);
-
-    if (role?.name === ROLES.PARTNER) {
-        throw new ApiError(400, "You are already a partner");
     }
 
     const existing = await partnerRepository.findByUserId(userId);
@@ -324,23 +316,31 @@ exports.getReferralLink = async (userId) => {
     };
 };
 
-exports.getReferralStats = async (userId) => {
+exports.getReferralStats = async (userId, roleName) => {
     const partner = await getApprovedPartner(userId);
+    const userReferralService = require("../user/referral.service");
+    const summary = await userReferralService.getMyReferralInfo(
+        userId,
+        roleName || "PARTNER"
+    );
 
-    const [totalReferrals, activeReferrals] = await Promise.all([
+    const [partnerTotal, partnerActive] = await Promise.all([
         referralRepository.countByPartnerUserId(userId),
         referralRepository.countByPartnerUserIdAndStatus(userId, "ACTIVE"),
     ]);
 
     return {
         partnerCode: partner.partnerCode,
+        referralCode: summary.referralCode,
         commissionRate: partner.commissionRate,
-        totalReferrals,
-        activeReferrals,
-        registeredReferrals: totalReferrals - activeReferrals,
+        totalReferrals: summary.totalReferralCount,
+        userReferrals: summary.referralCount,
+        partnerReferrals: partnerTotal,
+        activeReferrals: partnerActive,
+        registeredReferrals: Math.max(partnerTotal - partnerActive, 0),
         totalEarnings: partner.totalEarnings,
         pendingRewards: 0,
-        rewardStatus: "Rewards will be enabled soon",
+        rewardStatus: "Rewards are managed in Reward Management rules",
     };
 };
 
@@ -391,43 +391,14 @@ exports.getDashboard = async (userId) => {
     };
 };
 
-exports.getReferrals = async (userId, query) => {
-    const partner = await getApprovedPartner(userId);
-
-    const page = Number(query.page) || 1;
-    const limit = Number(query.limit) || 10;
-    const skip = (page - 1) * limit;
-
-    const [records, total] = await Promise.all([
-        referralRepository.findByPartnerUserId(userId, { skip, limit }),
-        referralRepository.countByPartnerUserId(userId),
-    ]);
-
-    const userIds = records
-        .map((item) => item.referredUser?._id || item.referredUser)
-        .filter(Boolean);
-
-    const profileMap = await getProfileMap(userIds);
-
-    return {
-        partnerCode: partner.partnerCode,
-        referrals: records.map((item) => {
-            const referredUserId = (
-                item.referredUser?._id || item.referredUser
-            ).toString();
-
-            return formatReferralRecord(
-                item,
-                profileMap[referredUserId] || null
-            );
-        }),
-        pagination: {
-            page,
-            limit,
-            total,
-            totalPages: Math.ceil(total / limit),
-        },
-    };
+exports.getReferrals = async (userId, query, roleName) => {
+    await getApprovedPartner(userId);
+    const userReferralService = require("../user/referral.service");
+    return userReferralService.getMyReferrals(
+        userId,
+        query,
+        roleName || "PARTNER"
+    );
 };
 
 exports.getApplications = async (status) => {
@@ -502,12 +473,6 @@ exports.approve = async (partnerId, adminId, commissionRate) => {
         throw new ApiError(400, "Partner already approved");
     }
 
-    const partnerRole = await roleRepository.getPartnerRole();
-
-    if (!partnerRole) {
-        throw new ApiError(500, "Partner role not found");
-    }
-
     const partnerCode = await generatePartnerCode();
 
     partner.status = "APPROVED";
@@ -518,14 +483,18 @@ exports.approve = async (partnerId, adminId, commissionRate) => {
     partner.remarks = "";
     await partner.save();
 
-    // Keep user's personal USR referralCode; partner invite uses Partner.partnerCode
-    await userRepository.update(partner.user, {
-        role: partnerRole._id,
-    });
+    // Keep User.role as USER — partner access is via Partner.status = APPROVED.
+    // Same login works in user app; partner app uses approved-partner middleware.
+
+    const partnerAppUrl =
+        process.env.PARTNER_APP_URL || process.env.PARTNER_APP_LINK || null;
+    const appHint = partnerAppUrl
+        ? ` Open the Partner app (${partnerAppUrl}) to manage your partner account.`
+        : " Open the Partner app to manage your partner account.";
 
     await notificationService.create(partner.user, {
-        title: "Partner Approved",
-        message: `Congratulations! Your partner code is ${partnerCode}`,
+        title: "Partner Account Approved",
+        message: `Congratulations! Your partner code is ${partnerCode}.${appHint}`,
         type: "SUCCESS",
     });
 
@@ -607,7 +576,7 @@ exports.linkReferral = async (partnerCode, newUserId) => {
 
     await partnerRepository.incrementReferrals(partner._id);
 
-    // Same admin "User Referral" reward settings apply to partner-code signups
+    // Same Reward Management referral rules apply to partner-code signups
     try {
         const userReferralService = require("../user/referral.service");
         const notificationService = require("../notification/service");
@@ -616,7 +585,7 @@ exports.linkReferral = async (partnerCode, newUserId) => {
             newUserId
         );
 
-        if (granted.referrerRewardId) {
+        if (granted.referrerRewardId || granted.ruleRewards?.referrer?.length) {
             await notificationService.create(partner.user, {
                 title: "Referral Reward",
                 message: "You earned a reward for referring a new user",
@@ -624,7 +593,7 @@ exports.linkReferral = async (partnerCode, newUserId) => {
             });
         }
 
-        if (granted.refereeRewardId) {
+        if (granted.refereeRewardId || granted.ruleRewards?.referee?.length) {
             await notificationService.create(newUserId, {
                 title: "Welcome Reward",
                 message: "You received a signup referral reward",
