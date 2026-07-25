@@ -1,8 +1,10 @@
 const User = require("../user/model");
 const UserProfile = require("../user/profile.model");
+const Role = require("../role/model");
 const Notification = require("../notification/model");
 
 const ApiError = require("../../utils/ApiError");
+const ROLES = require("../../constants/roles");
 
 const SORTABLE_FIELDS = {
     createdAt: "createdAt",
@@ -10,6 +12,37 @@ const SORTABLE_FIELDS = {
     isRead: "isRead",
     title: "title",
 };
+
+const AUDIENCES = [
+    {
+        value: "ALL",
+        label: "All users",
+        help: "Every non-admin account (any status)",
+    },
+    {
+        value: "ACTIVE",
+        label: "Active users",
+        help: "Only users with ACTIVE status",
+    },
+    {
+        value: "INACTIVE",
+        label: "Inactive users",
+        help: "Only users with INACTIVE status",
+    },
+    {
+        value: "BLOCKED",
+        label: "Blocked users",
+        help: "Only users with BLOCKED status",
+    },
+    {
+        value: "SUSPENDED",
+        label: "Suspended users",
+        help: "Only users with SUSPENDED status",
+    },
+];
+
+const ALLOWED_TYPES = ["INFO", "SUCCESS", "WARNING", "ERROR", "REWARD"];
+const BATCH_SIZE = 500;
 
 const formatAdminNotification = (notification, profileMap = {}) => {
     const data = notification.toObject ? notification.toObject() : notification;
@@ -39,9 +72,82 @@ const formatAdminNotification = (notification, profileMap = {}) => {
     };
 };
 
+const cleanPayload = ({ title, message, type = "INFO" }) => {
+    const cleanTitle = String(title || "").trim();
+    const cleanMessage = String(message || "").trim();
+    const cleanType = String(type || "INFO").toUpperCase();
+
+    if (!cleanTitle) {
+        throw new ApiError(400, "Title is required");
+    }
+    if (!cleanMessage) {
+        throw new ApiError(400, "Message is required");
+    }
+    if (!ALLOWED_TYPES.includes(cleanType)) {
+        throw new ApiError(400, "Invalid notification type");
+    }
+
+    return { cleanTitle, cleanMessage, cleanType };
+};
+
+const buildAudienceFilter = async (audienceRaw) => {
+    const audience = String(audienceRaw || "ALL").toUpperCase();
+    const allowed = AUDIENCES.map((item) => item.value);
+
+    if (!allowed.includes(audience)) {
+        throw new ApiError(400, "Invalid audience filter");
+    }
+
+    const adminRole = await Role.findOne({ name: ROLES.ADMIN }).select("_id");
+    const filter = { isDeleted: false };
+
+    if (adminRole) {
+        filter.role = { $ne: adminRole._id };
+    }
+
+    if (audience !== "ALL") {
+        filter.status = audience;
+    }
+
+    return { audience, filter };
+};
+
+exports.getAudiences = async () => {
+    const adminRole = await Role.findOne({ name: ROLES.ADMIN }).select("_id");
+    const base = { isDeleted: false };
+    if (adminRole) {
+        base.role = { $ne: adminRole._id };
+    }
+
+    const counts = await Promise.all(
+        AUDIENCES.map(async (item) => {
+            const filter =
+                item.value === "ALL"
+                    ? { ...base }
+                    : { ...base, status: item.value };
+            const count = await User.countDocuments(filter);
+            return { ...item, count };
+        })
+    );
+
+    return counts;
+};
+
+exports.previewBroadcast = async (audience) => {
+    const { audience: resolved, filter } = await buildAudienceFilter(audience);
+    const count = await User.countDocuments(filter);
+    const meta = AUDIENCES.find((item) => item.value === resolved);
+
+    return {
+        audience: resolved,
+        label: meta?.label || resolved,
+        count,
+    };
+};
+
 exports.getNotifications = async (query) => {
     const page = Number(query.page) || 1;
-    const limit = Number(query.limit) || 15;
+    const limit = Number(query.limit) || 10;
     const skip = (page - 1) * limit;
     const filter = {};
 
@@ -148,21 +254,11 @@ exports.sendToUser = async ({ userId, title, message, type = "INFO" }) => {
         throw new ApiError(404, "User not found");
     }
 
-    const cleanTitle = String(title || "").trim();
-    const cleanMessage = String(message || "").trim();
-
-    if (!cleanTitle) {
-        throw new ApiError(400, "Title is required");
-    }
-    if (!cleanMessage) {
-        throw new ApiError(400, "Message is required");
-    }
-
-    const allowedTypes = ["INFO", "SUCCESS", "WARNING", "ERROR"];
-    const cleanType = String(type || "INFO").toUpperCase();
-    if (!allowedTypes.includes(cleanType)) {
-        throw new ApiError(400, "Invalid notification type");
-    }
+    const { cleanTitle, cleanMessage, cleanType } = cleanPayload({
+        title,
+        message,
+        type,
+    });
 
     const notification = await Notification.create({
         user: user._id,
@@ -180,4 +276,46 @@ exports.sendToUser = async ({ userId, title, message, type = "INFO" }) => {
         ),
         { [user._id.toString()]: profile }
     );
+};
+
+exports.broadcast = async ({ audience, title, message, type = "INFO" }) => {
+    const { audience: resolved, filter } = await buildAudienceFilter(audience);
+    const { cleanTitle, cleanMessage, cleanType } = cleanPayload({
+        title,
+        message,
+        type,
+    });
+
+    const users = await User.find(filter).select("_id").lean();
+
+    if (!users.length) {
+        throw new ApiError(400, "No users match this audience filter");
+    }
+
+    const now = new Date();
+    const docs = users.map((user) => ({
+        user: user._id,
+        title: cleanTitle,
+        message: cleanMessage,
+        type: cleanType,
+        isRead: false,
+        createdAt: now,
+        updatedAt: now,
+    }));
+
+    for (let i = 0; i < docs.length; i += BATCH_SIZE) {
+        await Notification.insertMany(docs.slice(i, i + BATCH_SIZE), {
+            ordered: false,
+        });
+    }
+
+    const meta = AUDIENCES.find((item) => item.value === resolved);
+
+    return {
+        audience: resolved,
+        label: meta?.label || resolved,
+        sentCount: users.length,
+        title: cleanTitle,
+        type: cleanType,
+    };
 };

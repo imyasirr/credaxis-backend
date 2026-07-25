@@ -9,6 +9,8 @@ const adminCreditTokenController = require("./creditToken.controller");
 const adminWheelPrizeController = require("./wheelPrize.controller");
 const adminScratchPrizeController = require("./scratchPrize.controller");
 const adminShufflePrizeController = require("./shufflePrize.controller");
+const adminBubbleGameController = require("./bubbleGame.controller");
+const adminGamePlayController = require("./gamePlay.controller");
 const adminValidator = require("./validator");
 const adminWalletValidator = require("./wallet.validator");
 const adminCoinsValidator = require("./coins.validator");
@@ -133,6 +135,18 @@ router.post(
 );
 
 router.get("/notifications", adminNotificationController.getNotifications);
+router.get(
+    "/notifications/broadcast/audiences",
+    adminNotificationController.getAudiences
+);
+router.get(
+    "/notifications/broadcast/preview",
+    adminNotificationController.previewBroadcast
+);
+router.post(
+    "/notifications/broadcast",
+    adminNotificationController.broadcast
+);
 router.post(
     "/notifications",
     adminNotificationController.sendToUser
@@ -243,6 +257,21 @@ router.patch(
     adminShufflePrizeController.updatePrize
 );
 router.delete("/shuffle/prizes/:id", adminShufflePrizeController.deletePrize);
+
+router.get("/bubble-game/settings", adminBubbleGameController.getSettings);
+router.put(
+    "/bubble-game/settings",
+    adminBubbleGameController.updateSettingsValidators,
+    validate,
+    adminBubbleGameController.updateSettings
+);
+
+router.post(
+    "/game-plays/grant",
+    adminGamePlayController.grantPlaysValidators,
+    validate,
+    adminGamePlayController.grantPlays
+);
 
 router.get("/user-rewards", adminUserRewardValidator.getUserRewards, validate, adminUserRewardController.getUserRewards);
 router.get("/user-rewards/:id", adminUserRewardController.getUserRewardById);

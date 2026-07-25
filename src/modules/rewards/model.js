@@ -11,7 +11,7 @@ const userRewardSchema = new mongoose.Schema(
 
         gameType: {
             type: String,
-            enum: ["WHEEL", "SCRATCH", "SHUFFLE"],
+            enum: ["WHEEL", "SCRATCH", "SHUFFLE", "BUBBLE"],
             required: true,
             index: true,
         },

@@ -15,7 +15,7 @@ exports.submitKyc = asyncHandler(async (req, res) => {
 
 exports.getPendingList = asyncHandler(async (req, res) => {
     const list = await kycService.getPendingKycList();
-    return response.success(res, "Pending KYC list fetched", list);
+    return response.success(res, "KYC queue fetched", list);
 });
 
 exports.approveKyc = asyncHandler(async (req, res) => {

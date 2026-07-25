@@ -12,5 +12,7 @@ router.use("/rewards", require("../modules/rewards/routes"));
 router.use("/credit-reports", require("../modules/creditReport/routes"));
 router.use("/partner", require("../modules/partner/routes"));
 router.use("/admin", require("../modules/admin/routes"));
+router.use("/bubble-game", require("../modules/bubbleGame/routes"));
+router.use("/games", require("../modules/games/routes"));
 
 module.exports = router;

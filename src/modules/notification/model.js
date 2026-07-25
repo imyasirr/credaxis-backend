@@ -25,7 +25,8 @@ const notificationSchema = new mongoose.Schema(
         "INFO",
         "SUCCESS",
         "WARNING",
-        "ERROR"
+        "ERROR",
+        "REWARD",
       ],
       default: "INFO",
     },

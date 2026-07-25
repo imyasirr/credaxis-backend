@@ -1,10 +1,12 @@
 const kycRepository = require("./repository");
 const Wallet = require("../wallet/model");
 const UserProfile = require("../user/profile.model");
+const Role = require("../role/model");
 const notificationService = require("../notification/service");
 
 const ApiError = require("../../utils/ApiError");
-const { formatKyc } = require("./mapper");
+const ROLES = require("../../constants/roles");
+const { formatKyc, formatNotSubmittedKyc } = require("./mapper");
 const { getUploadPath } = require("../../middleware/upload.middleware");
 
 const getFilePath = (files, field) => {
@@ -106,11 +108,27 @@ exports.submitKyc = async (userId, body, files) => {
 };
 
 exports.getPendingKycList = async () => {
-    const list = await kycRepository.findPending();
-    const userIds = list.map((item) => item.user?._id || item.user);
+    const adminRole = await Role.findOne({ name: ROLES.ADMIN }).select("_id");
+    const excludeAdminId = adminRole?._id || null;
+
+    const [pending, notSubmittedUsers] = await Promise.all([
+        kycRepository.findPending(),
+        kycRepository.findUsersWithoutKyc(excludeAdminId),
+    ]);
+
+    const userIds = [
+        ...pending.map((item) => item.user?._id || item.user),
+        ...notSubmittedUsers.map((user) => user._id),
+    ];
     const profileMap = await buildProfileMap(userIds);
 
-    return list.map((item) => formatKyc(item, profileMap));
+    const pendingRows = pending.map((item) => formatKyc(item, profileMap));
+    const notSubmittedRows = notSubmittedUsers.map((user) =>
+        formatNotSubmittedKyc(user, profileMap[user._id.toString()] || null)
+    );
+
+    // Pending / under-review first, then never-submitted (newest signup first)
+    return [...pendingRows, ...notSubmittedRows];
 };
 
 exports.approveKyc = async (kycId, adminId) => {

@@ -110,6 +110,95 @@ exports.formatKyc = (kyc, profileMap = {}) => {
     };
 };
 
+/** Synthetic row for users who never submitted KYC (admin queue). */
+exports.formatNotSubmittedKyc = (user, profile = null) => {
+    const data = user.toObject ? user.toObject() : user;
+    const userId = (data._id || data.id)?.toString?.() || data._id;
+    const firstName = profile?.firstName || "";
+    const lastName = profile?.lastName || "";
+    const fullName =
+        profile?.fullName ||
+        [firstName, lastName].filter(Boolean).join(" ") ||
+        "";
+
+    const documents = [
+        {
+            key: "panNumber",
+            label: "PAN Number",
+            type: "text",
+            value: "",
+            complete: false,
+        },
+        {
+            key: "aadhaarNumber",
+            label: "Aadhaar Number",
+            type: "text",
+            value: "",
+            complete: false,
+        },
+        {
+            key: "panImage",
+            label: "PAN Image",
+            type: "file",
+            value: null,
+            complete: false,
+        },
+        {
+            key: "aadhaarFront",
+            label: "Aadhaar Front",
+            type: "file",
+            value: null,
+            complete: false,
+        },
+        {
+            key: "aadhaarBack",
+            label: "Aadhaar Back",
+            type: "file",
+            value: null,
+            complete: false,
+        },
+        {
+            key: "selfie",
+            label: "Selfie",
+            type: "file",
+            value: null,
+            complete: false,
+        },
+    ];
+
+    const missingDocs = documents.map((doc) => doc.label);
+
+    return {
+        id: `not-submitted-${userId}`,
+        userId,
+        user: {
+            id: userId,
+            mobile: data.mobile || "",
+            email: data.email || "",
+            firstName,
+            lastName,
+            fullName: fullName || null,
+        },
+        panNumber: "",
+        aadhaarNumber: "",
+        panImage: null,
+        aadhaarFront: null,
+        aadhaarBack: null,
+        selfie: null,
+        status: "NOT_SUBMITTED",
+        remarks: "",
+        verifiedAt: null,
+        createdAt: data.createdAt || null,
+        updatedAt: data.updatedAt || null,
+        documents,
+        missingDocs,
+        completedCount: 0,
+        totalDocs: documents.length,
+        isComplete: false,
+        notSubmitted: true,
+    };
+};
+
 /** Compact KYC for embedding in user/partner admin details */
 exports.formatKycSummary = (kyc) => {
     if (!kyc) {

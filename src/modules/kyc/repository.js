@@ -19,11 +19,31 @@ class KycRepository extends BaseRepository {
             .find({ status: { $in: ["PENDING", "UNDER_REVIEW"] } })
             .populate({
                 path: "user",
-                select: "mobile email isDeleted role",
+                select: "mobile email isDeleted role createdAt",
                 match: { isDeleted: false },
             })
             .sort({ createdAt: -1 })
             .then((rows) => rows.filter((row) => row.user));
+    }
+
+    /**
+     * Active non-admin users who have never created a KYC record.
+     */
+    async findUsersWithoutKyc(excludeRoleId = null) {
+        const User = require("../user/model");
+        const submittedUserIds = await this.model.distinct("user");
+        const filter = {
+            isDeleted: false,
+            _id: { $nin: submittedUserIds },
+        };
+
+        if (excludeRoleId) {
+            filter.role = { $ne: excludeRoleId };
+        }
+
+        return User.find(filter)
+            .select("mobile email createdAt role")
+            .sort({ createdAt: -1 });
     }
 
     /**

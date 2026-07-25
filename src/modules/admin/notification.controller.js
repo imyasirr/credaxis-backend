@@ -26,3 +26,24 @@ exports.sendToUser = asyncHandler(async (req, res) => {
     const data = await adminNotificationService.sendToUser(req.body);
     return response.success(res, "Message sent successfully", data);
 });
+
+exports.getAudiences = asyncHandler(async (req, res) => {
+    const data = await adminNotificationService.getAudiences();
+    return response.success(res, "Broadcast audiences fetched", data);
+});
+
+exports.previewBroadcast = asyncHandler(async (req, res) => {
+    const data = await adminNotificationService.previewBroadcast(
+        req.query.audience
+    );
+    return response.success(res, "Broadcast preview fetched", data);
+});
+
+exports.broadcast = asyncHandler(async (req, res) => {
+    const data = await adminNotificationService.broadcast(req.body);
+    return response.success(
+        res,
+        `Broadcast sent to ${data.sentCount} user${data.sentCount === 1 ? "" : "s"}`,
+        data
+    );
+});

@@ -11,7 +11,7 @@ exports.getMyNotifications = [
         .optional()
         .trim()
         .toUpperCase()
-        .isIn(["INFO", "SUCCESS", "WARNING", "ERROR"])
+        .isIn(["INFO", "SUCCESS", "WARNING", "ERROR", "REWARD"])
         .withMessage("Invalid notification type"),
 ];
 

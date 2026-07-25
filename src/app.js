@@ -14,8 +14,10 @@ const app = express();
 
 const websiteDist = path.join(__dirname, "../../credaxis-website/dist");
 const adminDist = path.join(__dirname, "../../admin-panel/dist");
+const gamesDist = path.join(__dirname, "../../games-webview/dist");
 const hasWebsite = fs.existsSync(path.join(websiteDist, "index.html"));
 const hasAdmin = fs.existsSync(path.join(adminDist, "index.html"));
+const hasGames = fs.existsSync(path.join(gamesDist, "index.html"));
 
 app.use(cors({
     origin: true,
@@ -39,6 +41,20 @@ app.use(
 
 app.use("/api", routes);
 
+// Games WebView SPA at /games/ (built with VITE_BASE_PATH=/games/)
+if (hasGames) {
+    app.get("/games", (req, res) => {
+        res.redirect(301, "/games/");
+    });
+    app.use(
+        "/games",
+        express.static(gamesDist, { index: false, fallthrough: true })
+    );
+    app.get(/^\/games(\/.*)?$/, (req, res) => {
+        res.sendFile(path.join(gamesDist, "index.html"));
+    });
+}
+
 // Admin SPA at /admin/ (built with VITE_BASE_PATH=/admin/)
 if (hasAdmin) {
     app.get("/admin", (req, res) => {
@@ -56,15 +72,19 @@ if (hasAdmin) {
 // Marketing website at /
 if (hasWebsite) {
     app.use(express.static(websiteDist, { index: false, fallthrough: true }));
-    app.get(/^\/(?!api(?:\/|$)|uploads(?:\/|$)|admin(?:\/|$)).*$/, (req, res) => {
-        res.sendFile(path.join(websiteDist, "index.html"));
-    });
+    app.get(
+        /^\/(?!api(?:\/|$)|uploads(?:\/|$)|admin(?:\/|$)|games(?:\/|$)).*$/,
+        (req, res) => {
+            res.sendFile(path.join(websiteDist, "index.html"));
+        }
+    );
 } else {
     app.get("/", (req, res) => {
         res.json({
             message: "CredAxis Backend Running",
             website: hasWebsite,
             admin: hasAdmin,
+            games: hasGames,
         });
     });
 }

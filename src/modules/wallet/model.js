@@ -61,6 +61,22 @@ const walletSchema = new mongoose.Schema(
             type: Number,
             default: 1000000,
         },
+
+        /**
+         * First successful user top-up bonus (equal coins).
+         * null = not yet given; set once when bonus is claimed.
+         */
+        firstTopupBonusGivenAt: {
+            type: Date,
+            default: null,
+        },
+
+        /** INR amount of the top-up that triggered the first bonus */
+        firstTopupBonusAmount: {
+            type: Number,
+            default: null,
+            min: 0,
+        },
     },
     {
         timestamps: true,

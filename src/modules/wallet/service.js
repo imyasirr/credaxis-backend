@@ -46,6 +46,61 @@ exports.getTransactions = async (userId, query) => {
     };
 };
 
+/**
+ * First-time wallet top-up: grant equal coins once + REWARD notification.
+ * Claims atomically via firstTopupBonusGivenAt so concurrent top-ups cannot double-credit.
+ */
+const grantFirstTopupCoinBonus = async (userId, walletId, amount) => {
+    const Wallet = require("./model");
+    const coinService = require("../coins/service");
+
+    const claimed = await Wallet.findOneAndUpdate(
+        { _id: walletId, firstTopupBonusGivenAt: null },
+        {
+            $set: {
+                firstTopupBonusGivenAt: new Date(),
+                firstTopupBonusAmount: amount,
+            },
+        },
+        { new: true }
+    );
+
+    if (!claimed) {
+        return null;
+    }
+
+    try {
+        const coinResult = await coinService.creditCoins(userId, {
+            amount,
+            source: "REWARD",
+            referenceId: String(walletId),
+            description: `First wallet top-up bonus: ${amount} coins`,
+            notify: false,
+        });
+
+        await notificationService.notifySafe(userId, {
+            title: "First time wallet money added",
+            message: `You received ${amount} coins as a first top-up reward`,
+            type: "REWARD",
+        });
+
+        return coinResult;
+    } catch (error) {
+        // Roll back claim so a later top-up can retry the bonus
+        await Wallet.updateOne(
+            { _id: walletId, firstTopupBonusGivenAt: { $ne: null } },
+            {
+                $set: {
+                    firstTopupBonusGivenAt: null,
+                    firstTopupBonusAmount: null,
+                },
+            }
+        );
+        console.error("First top-up coin bonus failed:", error.message);
+        return null;
+    }
+};
+
 exports.addMoney = async (userId, { amount, description }) => {
     const session = await mongoose.startSession();
     session.startTransaction();
@@ -92,9 +147,24 @@ exports.addMoney = async (userId, { amount, description }) => {
             type: "SUCCESS",
         });
 
+        const firstTopupBonus = await grantFirstTopupCoinBonus(
+            userId,
+            wallet._id,
+            amount
+        );
+
         return {
             wallet: formatWallet(wallet),
             transaction: formatTransaction(transaction),
+            ...(firstTopupBonus
+                ? {
+                      firstTopupBonus: {
+                          coins: amount,
+                          message:
+                              "First time wallet money added — equal coins credited",
+                      },
+                  }
+                : {}),
         };
     } catch (error) {
         await session.abortTransaction();
