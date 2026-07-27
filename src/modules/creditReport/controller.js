@@ -56,3 +56,8 @@ exports.adminUserChecklist = asyncHandler(async (req, res) => {
     );
     return response.success(res, "User credit checklist fetched", data);
 });
+
+exports.adminRegeneratePdf = asyncHandler(async (req, res) => {
+    const data = await creditReportService.regeneratePdf(req.params.id);
+    return response.success(res, "Credit report PDF regenerated", data);
+});

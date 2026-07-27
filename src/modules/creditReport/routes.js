@@ -38,6 +38,14 @@ router.get(
     creditReportController.adminUserChecklist
 );
 
+router.post(
+    "/admin/:id/regenerate-pdf",
+    authorize(ROLES.ADMIN),
+    creditReportValidator.reportId,
+    validate,
+    creditReportController.adminRegeneratePdf
+);
+
 router.get(
     "/admin/:id",
     authorize(ROLES.ADMIN),

@@ -9,8 +9,12 @@ const UserProfile = require("../user/profile.model");
 const Kyc = require("../kyc/model");
 
 const ApiError = require("../../utils/ApiError");
-const { getUploadPath } = require("../../middleware/upload.middleware");
+const {
+    getUploadPath,
+    deleteUploadFile,
+} = require("../../middleware/upload.middleware");
 const { formatCreditReport } = require("./mapper");
+const { buildAndSaveCredAxisPdf } = require("./pdf.builder");
 const notificationService = require("../notification/service");
 
 const CREDIT_REPORT_PATH =
@@ -277,7 +281,24 @@ exports.fetchCreditReportSummary = async ({
         });
         // Prefer bureau-returned name when available, else request name
         const pdfName = extracted.name || cleanName;
-        pdfPath = savePdfFromResponse(raw, pdfName, refId);
+        try {
+            pdfPath = await buildAndSaveCredAxisPdf(raw, {
+                referenceId: refId,
+                inquiryPurpose: purpose,
+                name: pdfName,
+                pan: extracted.pan,
+                mobile: cleanMobile,
+                decentroTxnId: raw?.decentroTxnId,
+                generatedAt: new Date(),
+            });
+        } catch (err) {
+            console.error("CredAxis PDF build failed:", err.message);
+            pdfPath = null;
+        }
+        // Fallback to vendor PDF if branded build failed / no CIR data
+        if (!pdfPath) {
+            pdfPath = savePdfFromResponse(raw, pdfName, refId);
+        }
     } else {
         extracted = {
             status: "FAILED",
@@ -606,6 +627,60 @@ exports.listAdminReports = async (query = {}) => {
         items: result.items.map((item) => formatCreditReport(item)),
         pagination: result.pagination,
     };
+};
+
+/**
+ * Rebuild CredAxis-branded PDF from stored rawResponse (admin).
+ */
+exports.regeneratePdf = async (reportId) => {
+    const report = await creditReportRepository.findAdminById(reportId);
+    if (!report) {
+        throw new ApiError(404, "Credit report not found");
+    }
+    if (!report.rawResponse) {
+        throw new ApiError(
+            400,
+            "No raw bureau response stored for this report"
+        );
+    }
+
+    let pdfPath;
+    try {
+        pdfPath = await buildAndSaveCredAxisPdf(report.rawResponse, {
+            referenceId: report.referenceId,
+            inquiryPurpose: report.inquiryPurpose,
+            name: report.name,
+            pan: report.pan,
+            mobile: report.mobile,
+            decentroTxnId: report.decentroTxnId,
+            generatedAt: new Date(),
+        });
+    } catch (err) {
+        throw new ApiError(
+            500,
+            `PDF generation failed: ${err.message || "unknown error"}`
+        );
+    }
+
+    if (!pdfPath) {
+        throw new ApiError(
+            400,
+            "Could not build PDF — CIR report data missing in raw response"
+        );
+    }
+
+    if (report.pdfPath && report.pdfPath !== pdfPath) {
+        try {
+            deleteUploadFile(report.pdfPath);
+        } catch {
+            // ignore cleanup errors
+        }
+    }
+
+    report.pdfPath = pdfPath;
+    await report.save();
+
+    return formatCreditReport(report, { includeRaw: true });
 };
 
 exports.VALID_INQUIRY_PURPOSES = VALID_INQUIRY_PURPOSES;
