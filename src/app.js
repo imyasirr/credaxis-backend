@@ -42,29 +42,31 @@ app.use(
 app.use("/api", routes);
 
 // Games WebView SPA at /games/ (built with VITE_BASE_PATH=/games/)
+// Use exact regex for trailing-slash redirect — Express non-strict
+// routing treats "/games" and "/games/" as the same string route (301 loop).
 if (hasGames) {
-    app.get("/games", (req, res) => {
+    app.get(/^\/games$/, (req, res) => {
         res.redirect(301, "/games/");
     });
     app.use(
         "/games",
         express.static(gamesDist, { index: false, fallthrough: true })
     );
-    app.get(/^\/games(\/.*)?$/, (req, res) => {
+    app.get(/^\/games\/.*/, (req, res) => {
         res.sendFile(path.join(gamesDist, "index.html"));
     });
 }
 
 // Admin SPA at /admin/ (built with VITE_BASE_PATH=/admin/)
 if (hasAdmin) {
-    app.get("/admin", (req, res) => {
+    app.get(/^\/admin$/, (req, res) => {
         res.redirect(301, "/admin/");
     });
     app.use(
         "/admin",
         express.static(adminDist, { index: false, fallthrough: true })
     );
-    app.get(/^\/admin(\/.*)?$/, (req, res) => {
+    app.get(/^\/admin\/.*/, (req, res) => {
         res.sendFile(path.join(adminDist, "index.html"));
     });
 }
