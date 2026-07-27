@@ -14,5 +14,8 @@ router.use("/partner", require("../modules/partner/routes"));
 router.use("/admin", require("../modules/admin/routes"));
 router.use("/bubble-game", require("../modules/bubbleGame/routes"));
 router.use("/games", require("../modules/games/routes"));
+router.use("/mandates", require("../modules/mandate/routes"));
+router.use("/installments", require("../modules/mandate/installment.routes"));
+router.use("/webhooks", require("../modules/mandate/webhook.routes"));
 
 module.exports = router;

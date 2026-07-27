@@ -20,7 +20,7 @@ const CREDIT_REPORT_PATH =
 const VALID_INQUIRY_PURPOSES = ["BL", "CC", "CL", "HL", "GL", "PL"];
 
 const CONSENT_PURPOSE_DEFAULT =
-    "To fetch Equifax credit report summary for CredAxis credit score check";
+    "To fetch Equifax credit report on CredAxis";
 
 const ensureCreditReportDir = () => {
     const dir = path.join(

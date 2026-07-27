@@ -15,8 +15,8 @@ exports.fetch = [
     body("consentPurpose")
         .optional()
         .trim()
-        .isLength({ min: 20 })
-        .withMessage("consentPurpose must be at least 20 characters"),
+        .isLength({ min: 20, max: 50 })
+        .withMessage("consentPurpose must be 20-50 characters"),
     body("name")
         .optional()
         .trim()
@@ -113,8 +113,8 @@ exports.adminFetch = [
     body("consentPurpose")
         .optional()
         .trim()
-        .isLength({ min: 20 })
-        .withMessage("consentPurpose must be at least 20 characters"),
+        .isLength({ min: 20, max: 50 })
+        .withMessage("consentPurpose must be 20-50 characters"),
     body("inquiryPurpose")
         .optional()
         .trim()

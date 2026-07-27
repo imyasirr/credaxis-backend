@@ -29,6 +29,8 @@ const adminUserReferralController = require("./userReferral.controller");
 const adminUserReferralValidator = require("./userReferral.validator");
 const adminRewardRuleController = require("./rewardRule.controller");
 const adminRewardRuleValidator = require("./rewardRule.validator");
+const adminMandateController = require("./mandate.controller");
+const adminMandateValidator = require("./mandate.validator");
 const auth = require("../../middleware/auth.middleware");
 const authorize = require("../../middleware/role.middleware");
 const validate = require("../../middleware/validation.middleware");
@@ -335,6 +337,84 @@ router.delete(
     adminRewardRuleValidator.ruleId,
     validate,
     adminRewardRuleController.deleteRule
+);
+
+// ── Mandates (RocketPay) ──────────────────────────────────────
+router.get("/mandates/dashboard", adminMandateController.getDashboard);
+router.get(
+    "/mandates",
+    adminMandateValidator.listMandates,
+    validate,
+    adminMandateController.getMandates
+);
+router.get(
+    "/mandates/:id",
+    adminMandateValidator.mandateId,
+    validate,
+    adminMandateController.getMandateById
+);
+router.post(
+    "/mandates/:id/refresh",
+    adminMandateValidator.mandateId,
+    validate,
+    adminMandateController.refreshMandate
+);
+router.post(
+    "/mandates/:id/cancel",
+    adminMandateValidator.mandateId,
+    validate,
+    adminMandateController.cancelMandate
+);
+
+router.get(
+    "/mandate-installments",
+    adminMandateValidator.listInstallments,
+    validate,
+    adminMandateController.getInstallments
+);
+router.get(
+    "/mandate-installments/:id",
+    adminMandateValidator.installmentId,
+    validate,
+    adminMandateController.getInstallmentById
+);
+router.post(
+    "/mandate-installments/:id/refresh",
+    adminMandateValidator.installmentId,
+    validate,
+    adminMandateController.refreshInstallment
+);
+router.post(
+    "/mandate-installments/:id/skip",
+    adminMandateValidator.installmentId,
+    validate,
+    adminMandateController.skipInstallment
+);
+router.post(
+    "/mandate-installments/:id/retry",
+    adminMandateValidator.installmentId,
+    adminMandateValidator.retryInstallment,
+    validate,
+    adminMandateController.retryInstallment
+);
+
+router.get(
+    "/mandate-transactions",
+    adminMandateValidator.listTransactions,
+    validate,
+    adminMandateController.getTransactions
+);
+router.get(
+    "/mandate-webhooks",
+    adminMandateValidator.listWebhooks,
+    validate,
+    adminMandateController.getWebhookLogs
+);
+router.get(
+    "/mandate-api-logs",
+    adminMandateValidator.listApiLogs,
+    validate,
+    adminMandateController.getApiLogs
 );
 
 module.exports = router;
