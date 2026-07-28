@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # CredAxis — one-command EC2 deploy
-# Pulls backend + website + admin, builds frontends, copies admin under /admin/,
+# Pulls backend + website + admin + games-webview, builds frontends,
+# copies admin under /admin/, symlinks games for Express /games/,
 # restarts API + reloads nginx.
 #
 # On EC2 (after backend git pull):
@@ -16,10 +17,13 @@ HOME_DIR="${HOME:-/home/ec2-user}"
 BACKEND_DIR="${BACKEND_DIR:-$HOME_DIR/credaxis-backend}"
 WEBSITE_DIR="${WEBSITE_DIR:-$HOME_DIR/credaxis-website}"
 ADMIN_DIR="${ADMIN_DIR:-$HOME_DIR/credaxis-admin_pannel}"
+GAMES_DIR="${GAMES_DIR:-$HOME_DIR/credaxis-games-webview}"
+# Express looks for ../../games-webview/dist from backend/src → ~/games-webview
+GAMES_LINK="${GAMES_LINK:-$HOME_DIR/games-webview}"
 PM2_APP="${PM2_APP:-credaxis-api}"
 BRANCH="${BRANCH:-main}"
 
-# EC2 is deploy-only: discard local tracked edits on website/admin so pull never aborts.
+# EC2 is deploy-only: discard local tracked edits on frontends so pull never aborts.
 # Backend keeps .env; only tracked code is soft-pulled (stash first).
 HARD_RESET_FRONTENDS="${HARD_RESET_FRONTENDS:-1}"
 
@@ -66,22 +70,48 @@ VITE_ADMIN_PATH=/admin
 EOF
 }
 
+write_games_env() {
+  cat > "$GAMES_DIR/.env.production" << 'EOF'
+VITE_BASE_PATH=/games/
+EOF
+}
+
+restart_pm2() {
+  log "PM2 restart: $PM2_APP"
+  if command -v pm2 >/dev/null 2>&1; then
+    if pm2 describe "$PM2_APP" >/dev/null 2>&1; then
+      pm2 restart "$PM2_APP"
+    else
+      cd "$BACKEND_DIR"
+      pm2 start src/server.js --name "$PM2_APP"
+      pm2 save || true
+    fi
+    pm2 status "$PM2_APP" || true
+  else
+    echo "WARN: pm2 not found — start API manually"
+  fi
+}
+
 log "CredAxis deploy starting"
 echo "  backend : $BACKEND_DIR"
 echo "  website : $WEBSITE_DIR"
 echo "  admin   : $ADMIN_DIR"
+echo "  games   : $GAMES_DIR → $GAMES_LINK"
 
 need_dir "$BACKEND_DIR"
 need_dir "$WEBSITE_DIR"
 need_dir "$ADMIN_DIR"
+need_dir "$GAMES_DIR"
 
 # ---------- PULL ----------
 if [[ "$HARD_RESET_FRONTENDS" == "1" ]]; then
   git_pull_hard "$WEBSITE_DIR"
   git_pull_hard "$ADMIN_DIR"
+  git_pull_hard "$GAMES_DIR"
 else
   git_pull_soft "$WEBSITE_DIR"
   git_pull_soft "$ADMIN_DIR"
+  git_pull_soft "$GAMES_DIR"
 fi
 git_pull_soft "$BACKEND_DIR"
 
@@ -89,22 +119,12 @@ git_pull_soft "$BACKEND_DIR"
 log "Writing production env files"
 write_website_env
 write_admin_env
+write_games_env
 
-# ---------- BACKEND ----------
-log "Backend: npm install + pm2 restart"
+# ---------- BACKEND deps ----------
+log "Backend: npm install"
 cd "$BACKEND_DIR"
 npm install --omit=dev
-if command -v pm2 >/dev/null 2>&1; then
-  if pm2 describe "$PM2_APP" >/dev/null 2>&1; then
-    pm2 restart "$PM2_APP"
-  else
-    pm2 start src/server.js --name "$PM2_APP"
-    pm2 save || true
-  fi
-  pm2 status "$PM2_APP" || true
-else
-  echo "WARN: pm2 not found — start API manually"
-fi
 
 # ---------- WEBSITE BUILD ----------
 log "Website: npm install + build (base /)"
@@ -134,6 +154,26 @@ cp -r "$ADMIN_DIR/dist/"* "$WEBSITE_DIR/dist/admin/"
 [[ -f "$WEBSITE_DIR/dist/admin/index.html" ]] || die "Admin copy failed"
 [[ -d "$WEBSITE_DIR/dist/admin/assets" ]] || die "Admin assets folder missing after copy"
 
+# ---------- GAMES BUILD ----------
+log "Games: npm install + build (base /games/)"
+cd "$GAMES_DIR"
+npm install
+npm run build
+[[ -f dist/index.html ]] || die "Games build failed — dist/index.html missing"
+
+if ! grep -q '/games/' dist/index.html; then
+  echo "Games index.html asset paths:"
+  grep -E 'src=|href=' dist/index.html || true
+  die "Games build missing /games/ prefix — check vite.config.js + .env.production"
+fi
+
+log "Symlink games for Express: $GAMES_LINK → $GAMES_DIR"
+ln -sfn "$GAMES_DIR" "$GAMES_LINK"
+[[ -f "$GAMES_LINK/dist/index.html" ]] || die "Games symlink broken — $GAMES_LINK/dist/index.html missing"
+
+# ---------- PM2 (after games dist exists so Express hasGames=true) ----------
+restart_pm2
+
 # ---------- NGINX ----------
 log "Nginx reload"
 if command -v nginx >/dev/null 2>&1; then
@@ -153,6 +193,10 @@ ls -la "$WEBSITE_DIR/dist/admin/index.html"
 ls -la "$WEBSITE_DIR/dist/admin/assets/" | head -6
 echo "Admin asset sample:"
 grep -oE 'src="[^"]+"' "$WEBSITE_DIR/dist/admin/index.html" | head -3
+echo "Games:"
+ls -la "$GAMES_LINK/dist/index.html"
+grep -o '<title>[^<]*</title>' "$GAMES_LINK/dist/index.html" || true
+grep -oE 'src="[^"]+"' "$GAMES_LINK/dist/index.html" | head -3
 
 JS_FILE="$(ls "$WEBSITE_DIR/dist/admin/assets/"*.js 2>/dev/null | head -1 || true)"
 if [[ -n "$JS_FILE" ]]; then
@@ -164,11 +208,20 @@ if [[ -n "$JS_FILE" ]]; then
 fi
 
 echo ""
+echo "Local games check (Express):"
+curl -sI "http://127.0.0.1:5000/games/" | head -5 || true
+curl -s "http://127.0.0.1:5000/games/" | grep -o '<title>[^<]*</title>' || true
+
+echo ""
 log "DONE"
 echo "  https://www.mycredaxis.com/        → website"
 echo "  https://www.mycredaxis.com/admin/  → admin"
+echo "  https://www.mycredaxis.com/games/  → games (nginx → Express)"
 echo "  https://www.mycredaxis.com/api/    → API (via nginx)"
 echo ""
 echo "If admin is white screen: nginx must use:"
 echo "  location ^~ /admin/ { try_files \$uri \$uri/ /admin/index.html; }"
 echo "  (no alias)  root = $WEBSITE_DIR/dist"
+echo ""
+echo "If games shows website HTML: nginx needs:"
+echo "  location ^~ /games/ { proxy_pass http://127.0.0.1:5000/games/; ... }"
