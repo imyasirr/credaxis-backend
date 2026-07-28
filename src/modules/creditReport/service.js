@@ -22,6 +22,8 @@ const CREDIT_REPORT_PATH =
     "/v2/financial_services/credit_bureau/credit_report/summary";
 
 const VALID_INQUIRY_PURPOSES = ["BL", "CC", "CL", "HL", "GL", "PL"];
+/** Fixed bureau inquiry purpose — not collected from clients */
+const DEFAULT_INQUIRY_PURPOSE = "PL";
 
 const CONSENT_PURPOSE_DEFAULT =
     "To fetch Equifax credit report on CredAxis";
@@ -177,6 +179,7 @@ const buildReferenceId = () =>
 
 /**
  * Reusable Decentro Equifax credit report fetch.
+ * Client fields: name, email, pan, mobile only.
  * Saves raw JSON + indexed fields + optional PDF.
  */
 exports.fetchCreditReportSummary = async ({
@@ -186,15 +189,10 @@ exports.fetchCreditReportSummary = async ({
     subjectType = "SELF",
     name,
     mobile,
+    email = null,
+    pan = null,
     consent = true,
     consentPurpose = CONSENT_PURPOSE_DEFAULT,
-    inquiryPurpose = "PL",
-    dateOfBirth,
-    addressType,
-    address,
-    pincode,
-    documentType,
-    documentId,
     generatePdf = true,
     referenceId,
 }) => {
@@ -202,22 +200,26 @@ exports.fetchCreditReportSummary = async ({
         throw new ApiError(400, "Consent must be true to fetch credit report");
     }
 
-    const purpose = String(inquiryPurpose || "PL").toUpperCase().trim();
-    if (!VALID_INQUIRY_PURPOSES.includes(purpose)) {
-        throw new ApiError(
-            400,
-            `Invalid inquiry_purpose. Allowed: ${VALID_INQUIRY_PURPOSES.join(", ")}`
-        );
-    }
-
     const cleanName = String(name || "").trim();
     const cleanMobile = String(mobile || "").trim();
+    const cleanEmail = String(email || "")
+        .trim()
+        .toLowerCase();
+    const cleanPan = String(pan || "")
+        .trim()
+        .toUpperCase();
 
     if (!cleanName || cleanName.length < 2) {
         throw new ApiError(400, "Name is required (2-40 characters)");
     }
     if (!/^[6-9]\d{9}$/.test(cleanMobile)) {
         throw new ApiError(400, "Valid 10-digit mobile is required");
+    }
+    if (!cleanEmail || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(cleanEmail)) {
+        throw new ApiError(400, "Valid email is required");
+    }
+    if (!/^[A-Z]{5}[0-9]{4}[A-Z]$/.test(cleanPan)) {
+        throw new ApiError(400, "Valid PAN is required");
     }
 
     const refId = referenceId || buildReferenceId();
@@ -227,25 +229,33 @@ exports.fetchCreditReportSummary = async ({
         throw new ApiError(400, "Duplicate reference_id");
     }
 
-    const payload = {
+    const purpose = DEFAULT_INQUIRY_PURPOSE;
+
+    // What we send to Decentro (inquiry_purpose fixed server-side)
+    const decentroPayload = {
         reference_id: refId,
         consent: true,
         consent_purpose:
-            consentPurpose.length >= 20
+            String(consentPurpose || "").length >= 20
                 ? consentPurpose
                 : CONSENT_PURPOSE_DEFAULT,
         name: cleanName.slice(0, 40),
         mobile: cleanMobile,
         inquiry_purpose: purpose,
+        document_type: "PAN",
+        document_id: cleanPan,
         generate_pdf: Boolean(generatePdf),
     };
 
-    if (dateOfBirth) payload.date_of_birth = dateOfBirth;
-    if (addressType) payload.address_type = addressType;
-    if (address) payload.address = address;
-    if (pincode) payload.pincode = String(pincode);
-    if (documentType) payload.document_type = documentType;
-    if (documentId) payload.document_id = String(documentId).toUpperCase();
+    // Stored audit — only client-facing fields (no DOB/address/pin/inquiry)
+    const requestPayload = {
+        reference_id: refId,
+        name: cleanName,
+        mobile: cleanMobile,
+        email: cleanEmail,
+        pan: cleanPan,
+        consent: true,
+    };
 
     const record = await creditReportRepository.create({
         user: userId || null,
@@ -257,14 +267,14 @@ exports.fetchCreditReportSummary = async ({
         status: "PENDING",
         name: cleanName,
         mobile: cleanMobile,
-        pan: documentType === "PAN" ? documentId?.toUpperCase() : null,
-        inquiryPurpose: purpose,
-        requestPayload: payload,
+        email: cleanEmail,
+        pan: cleanPan,
+        requestPayload,
     });
 
     const { statusCode, data: raw } = await decentroClient.post(
         CREDIT_REPORT_PATH,
-        payload
+        decentroPayload
     );
 
     const decentroStatus = String(raw?.status || "").toUpperCase();
@@ -277,17 +287,16 @@ exports.fetchCreditReportSummary = async ({
     if (isHttpOk && isApiSuccess) {
         extracted = extractIndexedFields(raw, {
             name: cleanName,
-            pan: payload.document_id || null,
+            pan: cleanPan,
         });
-        // Prefer bureau-returned name when available, else request name
         const pdfName = extracted.name || cleanName;
         try {
             pdfPath = await buildAndSaveCredAxisPdf(raw, {
                 referenceId: refId,
-                inquiryPurpose: purpose,
                 name: pdfName,
-                pan: extracted.pan,
+                pan: extracted.pan || cleanPan,
                 mobile: cleanMobile,
+                email: cleanEmail,
                 decentroTxnId: raw?.decentroTxnId,
                 generatedAt: new Date(),
             });
@@ -295,7 +304,6 @@ exports.fetchCreditReportSummary = async ({
             console.error("CredAxis PDF build failed:", err.message);
             pdfPath = null;
         }
-        // Fallback to vendor PDF if branded build failed / no CIR data
         if (!pdfPath) {
             pdfPath = savePdfFromResponse(raw, pdfName, refId);
         }
@@ -303,7 +311,7 @@ exports.fetchCreditReportSummary = async ({
         extracted = {
             status: "FAILED",
             name: cleanName,
-            pan: payload.document_id || null,
+            pan: cleanPan,
             score: null,
             scoreName: null,
             errorCode: raw?.responseCode || String(statusCode),
@@ -316,7 +324,8 @@ exports.fetchCreditReportSummary = async ({
 
     record.status = extracted.status;
     record.name = extracted.name;
-    record.pan = extracted.pan;
+    record.pan = extracted.pan || cleanPan;
+    record.email = cleanEmail;
     record.score = extracted.score;
     record.scoreName = extracted.scoreName;
     record.decentroTxnId = raw?.decentroTxnId || null;
@@ -359,8 +368,7 @@ exports.fetchCreditReportSummary = async ({
 };
 
 /**
- * Prefill name/mobile/PAN/DOB from profile + KYC when possible,
- * then call Equifax summary.
+ * Prefill name / mobile / email / PAN from profile + KYC when possible.
  */
 exports.fetchForUser = async (userId, body = {}) => {
     const user = await userRepository.findById(userId);
@@ -368,48 +376,20 @@ exports.fetchForUser = async (userId, body = {}) => {
         throw new ApiError(404, "User not found");
     }
 
-    // forSelf=false → user is checking someone else. Do NOT prefill from
-    // the requester's own profile/KYC, otherwise the wrong person's data
-    // (DOB/PAN/address) would be sent to the bureau.
     const forSelf = body.forSelf !== false;
+    const mobile = String(body.mobile || body.phone || "").trim();
 
     if (!forSelf) {
-        const name = body.name?.trim();
-        const mobile = body.mobile?.trim();
-
-        if (!name || name.length < 2) {
-            throw new ApiError(
-                400,
-                "Name is required when checking someone else"
-            );
-        }
-        if (!/^[6-9]\d{9}$/.test(mobile || "")) {
-            throw new ApiError(
-                400,
-                "Valid 10-digit mobile is required when checking someone else"
-            );
-        }
-
-        const pan =
-            body.documentId?.trim()?.toUpperCase() ||
-            body.pan?.trim()?.toUpperCase() ||
-            null;
-
         return exports.fetchCreditReportSummary({
             userId,
             source: "USER",
             subjectType: "OTHER",
-            name,
+            name: body.name?.trim(),
             mobile,
+            email: body.email?.trim(),
+            pan: body.pan?.trim()?.toUpperCase(),
             consent: body.consent !== false,
             consentPurpose: body.consentPurpose,
-            inquiryPurpose: body.inquiryPurpose || "PL",
-            dateOfBirth: body.dateOfBirth || null,
-            addressType: body.addressType,
-            address: body.address,
-            pincode: body.pincode,
-            documentType: pan ? body.documentType || "PAN" : body.documentType,
-            documentId: pan || body.documentId,
             generatePdf: body.generatePdf !== false,
             referenceId: body.referenceId,
         });
@@ -425,9 +405,15 @@ exports.fetchForUser = async (userId, body = {}) => {
         .join(" ")
         .trim();
 
-    const name =
-        body.name?.trim() ||
-        nameFromProfile ||
+    const name = body.name?.trim() || nameFromProfile || null;
+    const resolvedMobile = mobile || user.mobile;
+    const email =
+        body.email?.trim() ||
+        user.email ||
+        null;
+    const pan =
+        body.pan?.trim()?.toUpperCase() ||
+        kyc?.panNumber ||
         null;
 
     if (!name) {
@@ -436,17 +422,17 @@ exports.fetchForUser = async (userId, body = {}) => {
             "Name is required. Complete your profile or pass name in request"
         );
     }
-
-    const mobile = body.mobile?.trim() || user.mobile;
-    const pan =
-        body.documentId?.trim()?.toUpperCase() ||
-        body.pan?.trim()?.toUpperCase() ||
-        kyc?.panNumber ||
-        null;
-
-    let dateOfBirth = body.dateOfBirth || null;
-    if (!dateOfBirth && profile?.dob) {
-        dateOfBirth = new Date(profile.dob).toISOString().slice(0, 10);
+    if (!email) {
+        throw new ApiError(
+            400,
+            "Email is required. Complete your profile or pass email in request"
+        );
+    }
+    if (!pan) {
+        throw new ApiError(
+            400,
+            "PAN is required. Complete KYC or pass pan in request"
+        );
     }
 
     return exports.fetchCreditReportSummary({
@@ -454,16 +440,11 @@ exports.fetchForUser = async (userId, body = {}) => {
         source: "USER",
         subjectType: "SELF",
         name,
-        mobile,
+        mobile: resolvedMobile,
+        email,
+        pan,
         consent: body.consent !== false,
         consentPurpose: body.consentPurpose,
-        inquiryPurpose: body.inquiryPurpose || "PL",
-        dateOfBirth,
-        addressType: body.addressType || (profile?.address ? "H" : undefined),
-        address: body.address || profile?.address || undefined,
-        pincode: body.pincode || profile?.pincode || undefined,
-        documentType: pan ? body.documentType || "PAN" : body.documentType,
-        documentId: pan || body.documentId,
         generatePdf: body.generatePdf !== false,
         referenceId: body.referenceId,
     });
@@ -471,25 +452,15 @@ exports.fetchForUser = async (userId, body = {}) => {
 
 /**
  * Admin can check any person's credit (registered or external).
- * Saves into the same credit-reports checklist.
- * If mobile matches an app user, links that user.
+ * Body: name, email, pan, mobile/phone only.
  */
 exports.fetchByAdmin = async (adminId, body = {}) => {
     const name = body.name?.trim();
-    const mobile = body.mobile?.trim();
-
-    if (!name || name.length < 2) {
-        throw new ApiError(400, "Name is required (2-40 characters)");
-    }
-    if (!/^[6-9]\d{9}$/.test(mobile || "")) {
-        throw new ApiError(400, "Valid 10-digit mobile is required");
-    }
+    const mobile = String(body.mobile || body.phone || "").trim();
+    const email = body.email?.trim();
+    const pan = body.pan?.trim()?.toUpperCase();
 
     const existingUser = await userRepository.findByMobile(mobile);
-    const pan =
-        body.documentId?.trim()?.toUpperCase() ||
-        body.pan?.trim()?.toUpperCase() ||
-        null;
 
     return exports.fetchCreditReportSummary({
         userId: existingUser?._id || null,
@@ -498,15 +469,10 @@ exports.fetchByAdmin = async (adminId, body = {}) => {
         subjectType: "OTHER",
         name,
         mobile,
+        email,
+        pan,
         consent: body.consent !== false,
         consentPurpose: body.consentPurpose,
-        inquiryPurpose: body.inquiryPurpose || "PL",
-        dateOfBirth: body.dateOfBirth || null,
-        addressType: body.addressType,
-        address: body.address,
-        pincode: body.pincode,
-        documentType: pan ? body.documentType || "PAN" : body.documentType,
-        documentId: pan || body.documentId,
         generatePdf: body.generatePdf !== false,
         referenceId: body.referenceId,
     });
@@ -648,10 +614,10 @@ exports.regeneratePdf = async (reportId) => {
     try {
         pdfPath = await buildAndSaveCredAxisPdf(report.rawResponse, {
             referenceId: report.referenceId,
-            inquiryPurpose: report.inquiryPurpose,
             name: report.name,
             pan: report.pan,
             mobile: report.mobile,
+            email: report.email,
             decentroTxnId: report.decentroTxnId,
             generatedAt: new Date(),
         });

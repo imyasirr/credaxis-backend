@@ -78,6 +78,14 @@ const creditReportSchema = new mongoose.Schema(
             index: true,
         },
 
+        email: {
+            type: String,
+            trim: true,
+            lowercase: true,
+            default: null,
+            index: true,
+        },
+
         score: {
             type: Number,
             default: null,
@@ -86,12 +94,6 @@ const creditReportSchema = new mongoose.Schema(
 
         scoreName: {
             type: String,
-            default: null,
-        },
-
-        inquiryPurpose: {
-            type: String,
-            trim: true,
             default: null,
         },
 

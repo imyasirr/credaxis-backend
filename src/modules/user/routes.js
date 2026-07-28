@@ -18,6 +18,12 @@ router.get(
     controller.getMyProfile
 );
 
+router.get(
+    "/dashboard",
+    requireAction(ACTIONS.PROFILE_READ),
+    controller.getDashboard
+);
+
 router.post(
     "/complete",
     requireAction(ACTIONS.PROFILE_WRITE),

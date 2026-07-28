@@ -358,7 +358,7 @@ const mapRecentActivities = (report) => {
 
 /**
  * @param {object} raw - Decentro rawResponse
- * @param {object} meta - { referenceId, inquiryPurpose, mobile, name, pan, generatedAt }
+ * @param {object} meta - { referenceId, mobile, email, name, pan, generatedAt }
  */
 exports.mapCreditReportForPdf = (raw, meta = {}) => {
     const report = extractReport(raw);
@@ -377,7 +377,7 @@ exports.mapCreditReportForPdf = (raw, meta = {}) => {
     return {
         meta: {
             referenceId: str(meta.referenceId, "—"),
-            inquiryPurpose: str(meta.inquiryPurpose, "—"),
+            email: str(meta.email, "—"),
             generatedAt: meta.generatedAt
                 ? new Date(meta.generatedAt)
                 : new Date(),

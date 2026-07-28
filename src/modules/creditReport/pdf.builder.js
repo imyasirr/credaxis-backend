@@ -321,7 +321,7 @@ const renderDocument = (doc, model) => {
         { label: "Age", value: model.personal.age },
         { label: "PAN", value: model.personal.pan },
         { label: "Occupation", value: model.personal.occupation },
-        { label: "Inquiry Purpose", value: model.meta.inquiryPurpose },
+        { label: "Email", value: model.meta.email || "—" },
         { label: "Provider", value: model.meta.provider },
     ]);
 

@@ -7,6 +7,11 @@ exports.getMyProfile = asyncHandler(async (req, res) => {
     return response.success(res, "Profile fetched successfully", profile);
 });
 
+exports.getDashboard = asyncHandler(async (req, res) => {
+    const data = await service.getDashboard(req.user.id);
+    return response.success(res, "Dashboard fetched successfully", data);
+});
+
 exports.completeProfile = asyncHandler(async (req, res) => {
     const profile = await service.completeProfile(
         req.user.id,
