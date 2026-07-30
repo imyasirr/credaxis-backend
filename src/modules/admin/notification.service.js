@@ -5,6 +5,7 @@ const Notification = require("../notification/model");
 
 const ApiError = require("../../utils/ApiError");
 const ROLES = require("../../constants/roles");
+const { resolveNotificationIconUrl } = require("../notification/icons");
 
 const SORTABLE_FIELDS = {
     createdAt: "createdAt",
@@ -49,12 +50,14 @@ const formatAdminNotification = (notification, profileMap = {}) => {
     const user = data.user;
     const userId = user?._id?.toString() || user?.toString();
     const profile = profileMap[userId];
+    const icon = resolveNotificationIconUrl(data);
 
     return {
         id: data._id,
         title: data.title,
         message: data.message,
         type: data.type,
+        icon,
         isRead: data.isRead,
         createdAt: data.createdAt,
         user: user

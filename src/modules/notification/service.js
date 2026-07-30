@@ -2,12 +2,13 @@ const notificationRepository = require("./repository");
 const ApiError = require("../../utils/ApiError");
 const { formatNotification } = require("./mapper");
 
-exports.create = async (userId, { title, message, type = "INFO" }) => {
+exports.create = async (userId, { title, message, type = "INFO", icon = null }) => {
     const notification = await notificationRepository.create({
         user: userId,
         title,
         message,
         type,
+        ...(icon ? { icon: String(icon).trim() } : {}),
     });
 
     return formatNotification(notification);

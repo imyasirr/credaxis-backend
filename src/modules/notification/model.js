@@ -31,6 +31,13 @@ const notificationSchema = new mongoose.Schema(
       default: "INFO",
     },
 
+    /** Optional override; if empty, mapper derives from `type` */
+    icon: {
+      type: String,
+      trim: true,
+      default: null,
+    },
+
     isRead: {
       type: Boolean,
       default: false,

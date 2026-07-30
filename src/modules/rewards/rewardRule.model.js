@@ -10,7 +10,7 @@ const TRIGGERS = [
 
 const AUDIENCES = ["ALL", "USER", "PARTNER", "SPECIFIC"];
 
-const GAME_TYPES = ["WHEEL", "SCRATCH", "SHUFFLE"];
+const GAME_TYPES = ["WHEEL", "SCRATCH", "SHUFFLE", "BUBBLE"];
 
 const rewardRuleSchema = new mongoose.Schema(
     {
@@ -34,7 +34,7 @@ const rewardRuleSchema = new mongoose.Schema(
             index: true,
         },
 
-        /** WHEN — event that grants this reward */
+        /** WHEN — event that grants game plays */
         trigger: {
             type: String,
             enum: TRIGGERS,
@@ -58,26 +58,35 @@ const rewardRuleSchema = new mongoose.Schema(
             },
         ],
 
-        /** WHICH — prize catalog */
+        /**
+         * WHICH game to unlock.
+         * Rules grant plays only — prize comes when the user plays.
+         */
         gameType: {
             type: String,
             enum: GAME_TYPES,
             required: true,
         },
 
+        /** @deprecated Legacy — rules no longer grant catalog prizes */
         prizeId: {
             type: mongoose.Schema.Types.ObjectId,
-            required: true,
+            default: null,
         },
 
-        /**
-         * HOW MUCH — optional override of prize.value.
-         * null = use prize catalog value.
-         */
+        /** @deprecated Legacy — ignored for play-only rules */
         valueOverride: {
             type: Number,
             default: null,
             min: 0,
+        },
+
+        /** How many plays to grant when the rule fires */
+        plays: {
+            type: Number,
+            default: 1,
+            min: 1,
+            max: 100,
         },
 
         /** Optional schedule window */

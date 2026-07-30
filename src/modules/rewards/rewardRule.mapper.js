@@ -51,12 +51,7 @@ exports.formatRewardRule = (doc) => {
         audienceLabel: AUDIENCE_META[data.audience]?.label || data.audience,
         userIds: (data.userIds || []).map((id) => id?.toString?.() || id),
         gameType: data.gameType,
-        prizeId: data.prizeId?.toString?.() || data.prizeId,
-        prize: data.prize || null,
-        valueOverride:
-            data.valueOverride === undefined || data.valueOverride === null
-                ? null
-                : Number(data.valueOverride),
+        plays: Math.min(100, Math.max(1, Number(data.plays) || 1)),
         startAt: data.startAt || null,
         endAt: data.endAt || null,
         maxPerUser:
@@ -92,6 +87,9 @@ exports.getRewardRuleMeta = () => ({
                 ? "Spin Wheel"
                 : value === "SCRATCH"
                   ? "Scratch Card"
-                  : "Card Shuffle",
+                  : value === "SHUFFLE"
+                    ? "Card Shuffle"
+                    : "Bubble Pop",
+        help: "Grants play(s) only — prize is won when the user plays the game",
     })),
 });

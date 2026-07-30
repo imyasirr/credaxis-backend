@@ -3,7 +3,6 @@ const RewardRule = require("./rewardRule.model");
 const WheelPrize = require("./wheelPrize.model");
 const ScratchPrize = require("./scratchPrize.model");
 const ShufflePrize = require("./shufflePrize.model");
-const UserReward = require("./model");
 const User = require("../user/model");
 const { grantReward } = require("./service");
 const {
@@ -18,10 +17,50 @@ const PRIZE_MODELS = {
     SHUFFLE: ShufflePrize,
 };
 
+const CATALOG_GAMES = ["WHEEL", "SCRATCH", "SHUFFLE"];
+const PLAY_GAMES = ["WHEEL", "SCRATCH", "SHUFFLE", "BUBBLE"];
+
+const normalizePlays = (raw) =>
+    Math.min(100, Math.max(1, Math.floor(Number(raw) || 1)));
+
+/** Rules always grant game plays. Prize comes when the user plays the game. */
+const grantRulePlays = async ({
+    userId,
+    gameType,
+    plays = 1,
+    source = "RULE",
+    ruleId = null,
+    grantedBy = null,
+    note = "",
+}) => {
+    const type = String(gameType || "").toUpperCase();
+    if (!PLAY_GAMES.includes(type)) {
+        throw new ApiError(400, "Invalid gameType for plays");
+    }
+
+    const userGamePlayService = require("../games/userGamePlay.service");
+    return userGamePlayService.grantPlays({
+        userId,
+        gameType: type,
+        plays: normalizePlays(plays),
+        source,
+        ruleId,
+        grantedBy,
+        note:
+            note ||
+            (source === "RULE"
+                ? "Granted by reward rule"
+                : "Granted by admin via rule"),
+    });
+};
+
 const getPrizeModel = (gameType) => {
     const model = PRIZE_MODELS[String(gameType || "").toUpperCase()];
     if (!model) {
-        throw new ApiError(400, "gameType must be WHEEL, SCRATCH or SHUFFLE");
+        throw new ApiError(
+            400,
+            "gameType must be WHEEL, SCRATCH or SHUFFLE for prize catalogs"
+        );
     }
     return model;
 };
@@ -73,24 +112,7 @@ const resolveUserRefs = async (rawList = []) => {
     return ids;
 };
 
-const attachPrize = async (rule) => {
-    const formatted = formatRewardRule(rule);
-    const prize = await getPrizeModel(rule.gameType)
-        .findById(rule.prizeId)
-        .lean();
-    if (prize) {
-        formatted.prize = {
-            id: prize._id,
-            title: prize.title,
-            prizeType: prize.prizeType,
-            value: prize.value,
-            status: prize.status,
-            color: prize.color,
-            expiryDays: prize.expiryDays,
-        };
-    }
-    return formatted;
-};
+const formatRule = (rule) => formatRewardRule(rule);
 
 const isWithinSchedule = (rule, now = new Date()) => {
     if (rule.startAt && new Date(rule.startAt) > now) return false;
@@ -111,11 +133,9 @@ const matchesAudience = (rule, user, { isApprovedPartner = false } = {}) => {
     if (audience === "ALL") return true;
 
     const roleName = getRoleName(user);
-    // Approved partners keep role USER — still eligible for USER audience rewards
     if (audience === "USER") {
         return roleName === "USER" || roleName === "PARTNER";
     }
-    // Partner audience = approved Partner application (not just role name)
     if (audience === "PARTNER") {
         return isApprovedPartner || roleName === "PARTNER";
     }
@@ -127,6 +147,7 @@ const matchesAudience = (rule, user, { isApprovedPartner = false } = {}) => {
     return false;
 };
 
+/** Per-user cap based on play entitlements from this rule */
 const canGrantToUser = async (rule, userId) => {
     if (rule.maxTotal != null && rule.grantCount >= rule.maxTotal) {
         return false;
@@ -135,16 +156,35 @@ const canGrantToUser = async (rule, userId) => {
     if (rule.maxPerUser == null) return true;
     if (rule.maxPerUser <= 0) return false;
 
-    const count = await UserReward.countDocuments({
+    const UserGamePlay = require("../games/userGamePlay.model");
+    const count = await UserGamePlay.countDocuments({
         user: userId,
         ruleId: rule._id,
     });
     return count < rule.maxPerUser;
 };
 
+const executeRuleGrant = async (
+    rule,
+    userId,
+    { source = "RULE", grantedBy = null } = {}
+) => {
+    const playSource = source === "ADMIN_MANUAL" ? "ADMIN" : "RULE";
+    const play = await grantRulePlays({
+        userId,
+        gameType: rule.gameType,
+        plays: rule.plays,
+        source: playSource,
+        ruleId: rule._id,
+        grantedBy,
+        note: `Game plays from rule: ${rule.name || rule._id}`,
+    });
+    return { kind: "PLAY", play, gameType: rule.gameType };
+};
+
 /**
  * Apply all enabled rules for a trigger to one user.
- * Returns list of granted rewards (may be empty).
+ * Each matching rule grants game play(s) only.
  */
 exports.applyTrigger = async (trigger, userId, { skipManual = true } = {}) => {
     if (!userId || !trigger) return [];
@@ -177,25 +217,19 @@ exports.applyTrigger = async (trigger, userId, { skipManual = true } = {}) => {
         }
         if (!(await canGrantToUser(rule, userId))) continue;
 
-        const prize = await exports.resolveActivePrize(
-            rule.gameType,
-            rule.prizeId
-        );
-        if (!prize) continue;
-
-        const reward = await grantReward({
-            userId,
-            gameType: rule.gameType,
-            prize,
-            valueOverride: rule.valueOverride,
-            source: "RULE",
-            ruleId: rule._id,
-        });
-
-        rule.grantCount = (rule.grantCount || 0) + 1;
-        await rule.save();
-
-        granted.push(reward);
+        try {
+            const result = await executeRuleGrant(rule, userId, {
+                source: "RULE",
+            });
+            rule.grantCount = (rule.grantCount || 0) + 1;
+            await rule.save();
+            granted.push(result.play);
+        } catch (err) {
+            console.error(
+                `[rewardRule] applyTrigger ${rule._id} failed:`,
+                err?.message || err
+            );
+        }
     }
 
     return granted;
@@ -238,10 +272,8 @@ exports.listRules = async (query = {}) => {
         RewardRule.countDocuments(filter),
     ]);
 
-    const rules = await Promise.all(items.map((item) => attachPrize(item)));
-
     return {
-        items: rules,
+        items: items.map(formatRule),
         pagination: {
             page,
             limit,
@@ -254,7 +286,7 @@ exports.listRules = async (query = {}) => {
 exports.getRuleById = async (id) => {
     const rule = await RewardRule.findById(id);
     if (!rule) throw new ApiError(404, "Reward rule not found");
-    return attachPrize(rule);
+    return formatRule(rule);
 };
 
 const normalizeBody = async (body, isUpdate = false) => {
@@ -316,27 +348,20 @@ const normalizeBody = async (body, isUpdate = false) => {
     if (body.gameType !== undefined || !isUpdate) {
         const gameType = String(body.gameType || "").toUpperCase();
         if (!RewardRule.GAME_TYPES.includes(gameType)) {
-            throw new ApiError(400, "gameType must be WHEEL, SCRATCH or SHUFFLE");
+            throw new ApiError(
+                400,
+                "gameType must be WHEEL, SCRATCH, SHUFFLE or BUBBLE"
+            );
         }
         data.gameType = gameType;
     }
 
-    if (body.prizeId !== undefined || !isUpdate) {
-        if (!body.prizeId) throw new ApiError(400, "prizeId is required");
-        data.prizeId = body.prizeId;
-    }
+    // Play-only rules — clear legacy prize fields
+    data.prizeId = null;
+    data.valueOverride = null;
 
-    if (body.valueOverride !== undefined) {
-        data.valueOverride =
-            body.valueOverride === null || body.valueOverride === ""
-                ? null
-                : Number(body.valueOverride);
-        if (
-            data.valueOverride != null &&
-            (Number.isNaN(data.valueOverride) || data.valueOverride < 0)
-        ) {
-            throw new ApiError(400, "valueOverride must be a number >= 0");
-        }
+    if (body.plays !== undefined || !isUpdate) {
+        data.plays = normalizePlays(body.plays);
     }
 
     if (body.startAt !== undefined) {
@@ -359,15 +384,6 @@ const normalizeBody = async (body, isUpdate = false) => {
                 : Number(body.maxTotal);
     }
 
-    const gameType = data.gameType;
-    const prizeId = data.prizeId;
-    if (gameType && prizeId) {
-        const prize = await exports.resolveActivePrize(gameType, prizeId);
-        if (!prize) {
-            throw new ApiError(400, "Selected prize not found or inactive");
-        }
-    }
-
     return data;
 };
 
@@ -376,7 +392,7 @@ exports.createRule = async (body, adminId) => {
     data.createdBy = adminId || null;
     data.grantCount = 0;
     const rule = await RewardRule.create(data);
-    return attachPrize(rule);
+    return formatRule(rule);
 };
 
 exports.updateRule = async (id, body) => {
@@ -392,11 +408,7 @@ exports.updateRule = async (id, body) => {
         audience: body.audience !== undefined ? body.audience : rule.audience,
         userIds: body.userIds !== undefined ? body.userIds : rule.userIds,
         gameType: body.gameType !== undefined ? body.gameType : rule.gameType,
-        prizeId: body.prizeId !== undefined ? body.prizeId : rule.prizeId,
-        valueOverride:
-            body.valueOverride !== undefined
-                ? body.valueOverride
-                : rule.valueOverride,
+        plays: body.plays !== undefined ? body.plays : rule.plays,
         startAt: body.startAt !== undefined ? body.startAt : rule.startAt,
         endAt: body.endAt !== undefined ? body.endAt : rule.endAt,
         maxPerUser:
@@ -407,7 +419,7 @@ exports.updateRule = async (id, body) => {
     const data = await normalizeBody(merged, false);
     Object.assign(rule, data);
     await rule.save();
-    return attachPrize(rule);
+    return formatRule(rule);
 };
 
 exports.deleteRule = async (id) => {
@@ -417,7 +429,9 @@ exports.deleteRule = async (id) => {
 };
 
 /**
- * Admin manual grant — by userId or mobile, optional ruleId or free-form prize.
+ * Admin manual grant:
+ * - ruleId → grant that rule's game plays
+ * - gameType + prizeId → instant prize (support only; no play)
  */
 exports.grantManual = async ({
     userId,
@@ -461,32 +475,14 @@ exports.grantManual = async ({
             throw new ApiError(400, "Reward rule total grant limit reached");
         }
 
-        const prize = await exports.resolveActivePrize(
-            rule.gameType,
-            rule.prizeId
-        );
-        if (!prize) {
-            throw new ApiError(400, "Rule prize not found or inactive");
-        }
-
-        const resolvedOverride =
-            valueOverride !== undefined && valueOverride !== null
-                ? valueOverride
-                : rule.valueOverride;
-
-        const reward = await grantReward({
-            userId: targetUserId,
-            gameType: rule.gameType,
-            prize,
-            valueOverride: resolvedOverride,
+        const result = await executeRuleGrant(rule, targetUserId, {
             source: "ADMIN_MANUAL",
-            ruleId: rule._id,
             grantedBy: adminId || null,
         });
 
         rule.grantCount = (rule.grantCount || 0) + 1;
         await rule.save();
-        return reward;
+        return result.play;
     }
 
     if (!gameType || !prizeId) {
@@ -496,11 +492,19 @@ exports.grantManual = async ({
         );
     }
 
+    if (!CATALOG_GAMES.includes(String(gameType).toUpperCase())) {
+        throw new ApiError(
+            400,
+            "Instant prize grant supports WHEEL, SCRATCH or SHUFFLE only"
+        );
+    }
+
     const prize = await exports.resolveActivePrize(gameType, prizeId);
     if (!prize) {
         throw new ApiError(400, "Selected prize not found or inactive");
     }
 
+    // Support-only: credit prize immediately, do not grant a play
     return grantReward({
         userId: targetUserId,
         gameType,
