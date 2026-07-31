@@ -1,5 +1,6 @@
 const kycRepository = require("./repository");
 const Wallet = require("../wallet/model");
+const BankAccount = require("../wallet/bankAccount.model");
 const UserProfile = require("../user/profile.model");
 const Role = require("../role/model");
 const notificationService = require("../notification/service");
@@ -17,6 +18,38 @@ const getFilePath = (files, field) => {
     }
 
     return getUploadPath("kyc", file.filename);
+};
+
+const normalizeAccountType = (accountType) => {
+    const value = String(accountType || "SAVING").trim().toUpperCase();
+    return value === "SAVINGS" ? "SAVING" : value;
+};
+
+const buildBankAccountData = (userId, body) => ({
+    user: userId,
+    accountHolderName: body.accountHolderName.trim(),
+    bankName: body.bankName.trim(),
+    accountNumber: body.accountNumber.trim(),
+    ifscCode: body.ifscCode.trim().toUpperCase(),
+    accountType: normalizeAccountType(body.accountType),
+    isPrimary: true,
+    isVerified: false,
+    status: "ACTIVE",
+});
+
+const upsertPrimaryBankAccount = async (userId, body) => {
+    const bankData = buildBankAccountData(userId, body);
+
+    await BankAccount.updateMany(
+        { user: userId, isPrimary: true },
+        { $set: { isPrimary: false } }
+    );
+
+    return BankAccount.findOneAndUpdate(
+        { user: userId, accountNumber: bankData.accountNumber },
+        { $set: bankData },
+        { new: true, upsert: true, setDefaultsOnInsert: true }
+    );
 };
 
 const buildProfileMap = async (userIds) => {
@@ -76,6 +109,11 @@ exports.submitKyc = async (userId, body, files) => {
         user: userId,
         panNumber: body.panNumber.trim().toUpperCase(),
         aadhaarNumber: body.aadhaarNumber.trim(),
+        accountHolderName: body.accountHolderName.trim(),
+        bankName: body.bankName.trim(),
+        accountNumber: body.accountNumber.trim(),
+        ifscCode: body.ifscCode.trim().toUpperCase(),
+        accountType: normalizeAccountType(body.accountType),
         panImage: getFilePath(files, "panImage"),
         aadhaarFront: getFilePath(files, "aadhaarFront"),
         aadhaarBack: getFilePath(files, "aadhaarBack"),
@@ -97,6 +135,8 @@ exports.submitKyc = async (userId, body, files) => {
     } else {
         kyc = await kycRepository.create(kycData);
     }
+
+    await upsertPrimaryBankAccount(userId, body);
 
     await notificationService.create(userId, {
         title: "KYC Submitted",

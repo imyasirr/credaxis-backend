@@ -13,6 +13,20 @@ const kycSchema = new mongoose.Schema(
 
     aadhaarNumber: String,
 
+    accountHolderName: String,
+
+    bankName: String,
+
+    accountNumber: String,
+
+    ifscCode: String,
+
+    accountType: {
+      type: String,
+      enum: ["SAVING", "CURRENT"],
+      default: "SAVING",
+    },
+
     panImage: String,
 
     aadhaarFront: String,
