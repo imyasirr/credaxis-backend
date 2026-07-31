@@ -1,36 +1,44 @@
 const express = require("express");
 
-const adminController = require("./controller");
-const adminWalletController = require("./wallet.controller");
-const adminCoinsController = require("./coins.controller");
-const adminCoinTransferController = require("./coinTransfer.controller");
-const adminNotificationController = require("./notification.controller");
-const adminCreditTokenController = require("./creditToken.controller");
-const adminWheelPrizeController = require("./wheelPrize.controller");
-const adminScratchPrizeController = require("./scratchPrize.controller");
-const adminShufflePrizeController = require("./shufflePrize.controller");
-const adminBubbleGameController = require("./bubbleGame.controller");
-const adminGamePlayController = require("./gamePlay.controller");
-const adminValidator = require("./validator");
-const adminWalletValidator = require("./wallet.validator");
-const adminCoinsValidator = require("./coins.validator");
-const adminCoinTransferValidator = require("./coinTransfer.validator");
-const adminCreditTokenValidator = require("./creditToken.validator");
-const adminWheelPrizeValidator = require("./wheelPrize.validator");
-const adminScratchPrizeValidator = require("./scratchPrize.validator");
-const adminShufflePrizeValidator = require("./shufflePrize.validator");
-const adminUserRewardController = require("./userReward.controller");
-const adminUserRewardValidator = require("./userReward.validator");
-const adminTokenPurchaseController = require("./tokenPurchase.controller");
-const adminTokenPurchaseValidator = require("./tokenPurchase.validator");
-const adminTokenTransferController = require("./tokenTransfer.controller");
-const adminTokenTransferValidator = require("./tokenTransfer.validator");
-const adminUserReferralController = require("./userReferral.controller");
-const adminUserReferralValidator = require("./userReferral.validator");
-const adminRewardRuleController = require("./rewardRule.controller");
-const adminRewardRuleValidator = require("./rewardRule.validator");
-const adminMandateController = require("./mandate.controller");
-const adminMandateValidator = require("./mandate.validator");
+const adminController = require("./auth/controller");
+const adminValidator = require("./auth/validator");
+
+const adminWalletController = require("./wallet/wallet.controller");
+const adminWalletValidator = require("./wallet/wallet.validator");
+
+const adminCoinsController = require("./coins/coins.controller");
+const adminCoinsValidator = require("./coins/coins.validator");
+const adminCoinTransferController = require("./coins/coinTransfer.controller");
+const adminCoinTransferValidator = require("./coins/coinTransfer.validator");
+
+const adminNotificationController = require("./notifications/notification.controller");
+
+const adminCreditTokenController = require("./tokens/creditToken.controller");
+const adminCreditTokenValidator = require("./tokens/creditToken.validator");
+const adminTokenPurchaseController = require("./tokens/tokenPurchase.controller");
+const adminTokenPurchaseValidator = require("./tokens/tokenPurchase.validator");
+const adminTokenTransferController = require("./tokens/tokenTransfer.controller");
+const adminTokenTransferValidator = require("./tokens/tokenTransfer.validator");
+
+const adminWheelPrizeController = require("./games/wheelPrize.controller");
+const adminWheelPrizeValidator = require("./games/wheelPrize.validator");
+const adminScratchPrizeController = require("./games/scratchPrize.controller");
+const adminScratchPrizeValidator = require("./games/scratchPrize.validator");
+const adminShufflePrizeController = require("./games/shufflePrize.controller");
+const adminShufflePrizeValidator = require("./games/shufflePrize.validator");
+const adminBubbleGameController = require("./games/bubbleGame.controller");
+const adminGamePlayController = require("./games/gamePlay.controller");
+
+const adminUserRewardController = require("./rewards/userReward.controller");
+const adminUserRewardValidator = require("./rewards/userReward.validator");
+const adminUserReferralController = require("./rewards/userReferral.controller");
+const adminUserReferralValidator = require("./rewards/userReferral.validator");
+const adminRewardRuleController = require("./rewards/rewardRule.controller");
+const adminRewardRuleValidator = require("./rewards/rewardRule.validator");
+
+const adminMandateController = require("./mandates/mandate.controller");
+const adminMandateValidator = require("./mandates/mandate.validator");
+
 const auth = require("../../middleware/auth.middleware");
 const authorize = require("../../middleware/role.middleware");
 const validate = require("../../middleware/validation.middleware");

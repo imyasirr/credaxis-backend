@@ -11,6 +11,58 @@ exports.createMandate = [
         .optional()
         .trim()
         .isLength({ max: 200 }),
+    body("customer.instrument")
+        .optional()
+        .isObject()
+        .withMessage("customer.instrument must be an object")
+        .bail()
+        .custom((instrument) => {
+            const requiredFields = [
+                "type",
+                "account_number",
+                "ifsc",
+                "account_holder_name",
+                "account_type",
+            ];
+            const missingFields = requiredFields.filter(
+                (field) =>
+                    typeof instrument[field] !== "string" ||
+                    !instrument[field].trim()
+            );
+
+            if (missingFields.length > 0) {
+                throw new Error(
+                    `customer.instrument missing fields: ${missingFields.join(", ")}`
+                );
+            }
+
+            return true;
+        }),
+    body("customer.instrument.type")
+        .optional()
+        .trim()
+        .notEmpty()
+        .withMessage("customer.instrument.type is required"),
+    body("customer.instrument.account_number")
+        .optional()
+        .trim()
+        .notEmpty()
+        .withMessage("customer.instrument.account_number is required"),
+    body("customer.instrument.ifsc")
+        .optional()
+        .trim()
+        .notEmpty()
+        .withMessage("customer.instrument.ifsc is required"),
+    body("customer.instrument.account_holder_name")
+        .optional()
+        .trim()
+        .notEmpty()
+        .withMessage("customer.instrument.account_holder_name is required"),
+    body("customer.instrument.account_type")
+        .optional()
+        .trim()
+        .notEmpty()
+        .withMessage("customer.instrument.account_type is required"),
     body("mode")
         .optional()
         .trim()

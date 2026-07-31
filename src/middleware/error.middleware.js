@@ -22,5 +22,9 @@ module.exports = (err, req, res, next) => {
         body.allowedActions = err.allowedActions;
     }
 
+    if (err.details) {
+        body.details = err.details;
+    }
+
     return res.status(statusCode).json(body);
 };

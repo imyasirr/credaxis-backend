@@ -1,13 +1,58 @@
+const crypto = require("crypto");
 const mongoose = require("mongoose");
 const Mandate = require("./mandate.model");
 const Installment = require("./installment.model");
+const BankAccount = require("../wallet/bankAccount.model");
 const gateway = require("./rocketpay.gateway");
 const { formatMandate, formatInstallment } = require("./mapper");
 const ApiError = require("../../utils/ApiError");
 
+const generateMandateReference = (userId = null) => {
+    const prefix = "MAND";
+    const userPart = userId ? String(userId).slice(-6) : "USER";
+    const stamp = Date.now().toString(36).toUpperCase();
+    const randomPart = crypto.randomBytes(3).toString("hex").toUpperCase();
+    return `${prefix}_${userPart}_${stamp}_${randomPart}`;
+};
+
 const isObjectId = (value) =>
     mongoose.Types.ObjectId.isValid(value) &&
     String(new mongoose.Types.ObjectId(value)) === String(value);
+
+const toRocketPayAccountType = (accountType) => {
+    const value = String(accountType || "SAVINGS").trim().toUpperCase();
+    return value === "SAVING" ? "SAVINGS" : value;
+};
+
+const buildBankInstrument = (bankAccount) => ({
+    type: "BANK_ACCOUNT",
+    account_number: bankAccount.accountNumber,
+    ifsc: bankAccount.ifscCode,
+    account_holder_name: bankAccount.accountHolderName,
+    account_type: toRocketPayAccountType(bankAccount.accountType),
+});
+
+const attachCustomerInstrument = async (userId, body) => {
+    if (body.customer?.instrument) {
+        return;
+    }
+
+    const bankAccount = await BankAccount.findOne({
+        user: userId,
+        status: "ACTIVE",
+        isPrimary: true,
+    }).sort({ createdAt: -1 });
+
+    if (!bankAccount) {
+        throw new ApiError(
+            400,
+            "Primary bank account not found. Add a primary bank account before creating mandate"
+        );
+    }
+
+    body.customer = body.customer || {};
+    body.customer.instrument = buildBankInstrument(bankAccount);
+};
 
 exports.resolveMandate = async (idOrRpId, { userId = null } = {}) => {
     const filter = isObjectId(idOrRpId)
@@ -42,16 +87,27 @@ exports.resolveInstallment = async (idOrRpId, { userId = null } = {}) => {
 };
 
 exports.createMandate = async (userId, body, ipAddress) => {
+    await attachCustomerInstrument(userId, body);
+
+    if (body.reference_id && typeof body.reference_id === "string") {
+        body.reference_id = body.reference_id.trim();
+    }
+
+    if (!body.reference_id) {
+        body.reference_id = generateMandateReference(userId);
+    }
+
+    body.reference_type = body.reference_type
+        ? String(body.reference_type).trim().toUpperCase()
+        : "MAIN";
+
     const { data, synced } = await gateway.createMandate(body, {
         userId,
         ipAddress,
         source: "API",
     });
 
-    return {
-        mandate: formatMandate(synced),
-        rocketpay: data,
-    };
+    return { mandate: synced, rocketpay: data };
 };
 
 exports.listMyMandates = async (userId, query = {}) => {

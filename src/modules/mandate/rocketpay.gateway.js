@@ -7,17 +7,79 @@ const {
 } = require("./sync");
 
 const isSuccessStatus = (code) => code >= 200 && code < 300;
+const GENERIC_ROCKETPAY_ERRORS = new Set([
+    "invalid_request_error",
+    "api_error",
+    "server_error",
+]);
+
+const normalizeErrorPayload = (payload) => {
+    if (!payload) return null;
+    if (typeof payload === "string") return payload.trim() || null;
+    if (typeof payload !== "object") return String(payload);
+
+    const pickString = (value) =>
+        typeof value === "string" && value.trim() ? value.trim() : null;
+
+    const tryPaths = [
+        "message",
+        "error_description",
+        "error_message",
+        "error",
+        "msg",
+        "detail",
+    ];
+
+    for (const path of tryPaths) {
+        const result = pickString(payload[path]);
+        if (result && !GENERIC_ROCKETPAY_ERRORS.has(result.toLowerCase())) {
+            return result;
+        }
+    }
+
+    if (Array.isArray(payload.errors) && payload.errors.length > 0) {
+        return payload.errors
+            .map((error) => normalizeErrorPayload(error) || String(error))
+            .filter(Boolean)
+            .join(". ");
+    }
+
+    if (payload.errors && typeof payload.errors === "object") {
+        const nested = normalizeErrorPayload(payload.errors);
+        if (nested) return nested;
+    }
+
+    if (payload.data && typeof payload.data === "object") {
+        const nested = normalizeErrorPayload(payload.data);
+        if (nested) return nested;
+    }
+
+    if (typeof payload.error_type === "string" && payload.error_type.trim()) {
+        const title = payload.error_type.trim();
+        const detail = [
+            payload.error_description,
+            payload.error,
+            payload.message,
+        ]
+            .map(pickString)
+            .find(
+                (value) =>
+                    value && !GENERIC_ROCKETPAY_ERRORS.has(value.toLowerCase())
+            );
+        return detail ? `${title}: ${detail}` : title;
+    }
+
+    return null;
+};
 
 const extractErrorMessage = (data, fallback) => {
-    if (!data) return fallback;
-    if (typeof data === "string") return data;
-    return (
-        data.message ||
-        data.error ||
-        data.error_message ||
-        data.msg ||
-        (typeof data.errors === "string" ? data.errors : null) ||
-        fallback
+    const normalized = normalizeErrorPayload(data);
+    return normalized || fallback;
+};
+
+const logRocketPayFailure = ({ apiName, statusCode, errorMessage }) => {
+    console.error(
+        `[RocketPay] ${apiName} failed (${statusCode}): ${errorMessage}`
     );
 };
 
@@ -51,12 +113,26 @@ exports.callRocketPay = async ({
                 responseData,
                 `RocketPay ${apiName} failed`
             );
+            if (
+                String(responseData?.error_type).toLowerCase() ===
+                "invalid_request_error" &&
+                statusCode >= 500
+            ) {
+                statusCode = 400;
+            }
+
+            logRocketPayFailure({
+                apiName,
+                statusCode,
+                errorMessage,
+            });
         }
     } catch (err) {
         status = "ERROR";
         statusCode = err.statusCode || 502;
         errorMessage = err.message || `RocketPay ${apiName} error`;
         responseData = { error: errorMessage };
+        logRocketPayFailure({ apiName, statusCode, errorMessage });
 
         await writeApiLog({
             userId,
@@ -138,6 +214,7 @@ exports.createMandate = (body, ctx) =>
         sync: async (data) =>
             syncMandateFromRocketPay(data, {
                 userId: ctx.userId,
+                referenceId: body.reference_id || null,
                 schedule: body.schedule || null,
                 source: ctx.source || "API",
             }),
@@ -236,10 +313,10 @@ exports.listInstallments = (mandateId, ctx) =>
             const list = Array.isArray(data)
                 ? data
                 : Array.isArray(data?.data)
-                  ? data.data
-                  : Array.isArray(data?.installments)
-                    ? data.installments
-                    : [];
+                    ? data.data
+                    : Array.isArray(data?.installments)
+                        ? data.installments
+                        : [];
             const synced = [];
             for (const item of list) {
                 const doc = await syncInstallmentFromRocketPay(item, {

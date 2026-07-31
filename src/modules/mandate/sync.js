@@ -81,15 +81,19 @@ const upsertInstallmentTxns = async (installmentDoc, raw) => {
  */
 exports.syncMandateFromRocketPay = async (
     raw,
-    { userId = null, schedule = null, source = "API" } = {}
+    { userId = null, referenceId = null, schedule = null, source = "API" } = {}
 ) => {
     if (!raw || !raw.id) {
         return null;
     }
 
+    const existingDoc = await Mandate.findOne({ rocketpayId: String(raw.id) });
+    const resolvedReferenceId =
+        referenceId || raw.reference_id || existingDoc?.referenceId || null;
+
     const set = {
         rocketpayId: String(raw.id),
-        referenceId: raw.reference_id ?? null,
+        referenceId: resolvedReferenceId,
         referenceType: raw.reference_type || "MAIN",
         state: raw.state || "CREATED",
         frequency: raw.frequency || null,

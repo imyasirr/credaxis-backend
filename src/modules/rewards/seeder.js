@@ -16,7 +16,7 @@ require("dotenv").config();
 const mongoose = require("mongoose");
 const connectDB = require("../../config/db");
 const RewardRule = require("./rewardRule.model");
-const Setting = require("../admin/setting.model");
+const Setting = require("../admin/shared/setting.model");
 
 const RULES = [
     {
