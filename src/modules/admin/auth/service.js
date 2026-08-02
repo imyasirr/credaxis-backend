@@ -212,6 +212,7 @@ exports.getUsers = async (query) => {
                 email: user.email || "",
                 role: user.role?.name || user.role,
                 status: user.status,
+                avatar: profile?.avatar || null,
                 isMobileVerified: user.isMobileVerified,
                 isProfileComplete: profile?.isProfileComplete || false,
                 kycStatus: kyc?.status || "NOT_SUBMITTED",

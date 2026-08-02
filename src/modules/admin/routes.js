@@ -39,11 +39,15 @@ const adminRewardRuleValidator = require("./rewards/rewardRule.validator");
 const adminMandateController = require("./mandates/mandate.controller");
 const adminMandateValidator = require("./mandates/mandate.validator");
 
+const adminWebsiteController = require("./website/controller");
+const adminWebsiteValidator = require("./website/validator");
+
 const auth = require("../../middleware/auth.middleware");
 const authorize = require("../../middleware/role.middleware");
 const validate = require("../../middleware/validation.middleware");
-const { uploadAvatar } = require("../../middleware/upload.middleware");
+const { uploadAvatar, uploadWebsiteMedia } = require("../../middleware/upload.middleware");
 const ROLES = require("../../constants/roles");
+
 
 const router = express.Router();
 
@@ -425,4 +429,71 @@ router.get(
     adminMandateController.getApiLogs
 );
 
+// ── Website Content Management ──────────────────────────────────
+router.get("/website/pages", adminWebsiteController.getPages);
+router.post("/website/pages/seed", adminWebsiteController.seedDefaultPages);
+router.get(
+    "/website/pages/:id",
+    adminWebsiteValidator.pageIdParam,
+    validate,
+    adminWebsiteController.getPageById
+);
+router.post(
+    "/website/pages",
+    adminWebsiteValidator.createPage,
+    validate,
+    adminWebsiteController.createPage
+);
+router.put(
+    "/website/pages/:id",
+    adminWebsiteValidator.updatePage,
+    validate,
+    adminWebsiteController.updatePage
+);
+router.delete(
+    "/website/pages/:id",
+    adminWebsiteValidator.pageIdParam,
+    validate,
+    adminWebsiteController.deletePage
+);
+
+router.put(
+    "/website/pages/:id/sections",
+    adminWebsiteValidator.pageIdParam,
+    validate,
+    adminWebsiteController.updateSections
+);
+router.put(
+    "/website/pages/:id/sections/upsert",
+    adminWebsiteValidator.upsertSection,
+    validate,
+    adminWebsiteController.upsertSection
+);
+router.delete(
+    "/website/pages/:id/sections/:sectionKey",
+    adminWebsiteValidator.deleteSection,
+    validate,
+    adminWebsiteController.deleteSection
+);
+router.patch(
+    "/website/pages/:id/sections/reorder",
+    adminWebsiteValidator.reorderSections,
+    validate,
+    adminWebsiteController.reorderSections
+);
+
+router.get("/website/media", adminWebsiteController.getMedia);
+router.post(
+    "/website/media/upload",
+    uploadWebsiteMedia,
+    adminWebsiteController.uploadMedia
+);
+router.delete(
+    "/website/media/:id",
+    adminWebsiteValidator.mediaIdParam,
+    validate,
+    adminWebsiteController.deleteMedia
+);
+
 module.exports = router;
+

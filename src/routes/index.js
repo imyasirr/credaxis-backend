@@ -17,5 +17,6 @@ router.use("/games", require("../modules/games/routes"));
 router.use("/mandates", require("../modules/mandate/routes"));
 router.use("/installments", require("../modules/mandate/installment.routes"));
 router.use("/webhooks", require("../modules/mandate/webhook.routes"));
+router.use("/website", require("../modules/website/routes"));
 
 module.exports = router;

@@ -256,3 +256,9 @@ module.exports.uploadPartnerDocs = (() => {
         });
     };
 })();
+
+module.exports.uploadWebsiteMedia = createUploader({
+    folder: "website",
+    fieldName: "file",
+});
+
