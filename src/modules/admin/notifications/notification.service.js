@@ -1,11 +1,11 @@
-const User = require("../../user/model");
-const UserProfile = require("../../user/profile.model");
+const User = require("../../api/user/model");
+const UserProfile = require("../../api/user/profile.model");
 const Role = require("../../role/model");
-const Notification = require("../../notification/model");
+const Notification = require("../../api/notification/model");
 
 const ApiError = require("../../../utils/ApiError");
 const ROLES = require("../../../constants/roles");
-const { resolveNotificationIconUrl } = require("../../notification/icons");
+const { resolveNotificationIconUrl } = require("../../api/notification/icons");
 
 const SORTABLE_FIELDS = {
     createdAt: "createdAt",

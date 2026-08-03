@@ -1,4 +1,4 @@
-const tokenTransferService = require("../../creditToken/tokenTransfer.service");
+const tokenTransferService = require("../../api/creditToken/tokenTransfer.service");
 const asyncHandler = require("../../../utils/asyncHandler");
 const response = require("../../../utils/response");
 
@@ -28,8 +28,8 @@ exports.getPartnerBalances = asyncHandler(async (req, res) => {
 });
 
 exports.getTransferReasons = asyncHandler(async (req, res) => {
-    const { TRANSFER_REASONS } = require("../../creditToken/tokenTransfer.model");
-    const { REASON_LABELS } = require("../../creditToken/tokenTransfer.mapper");
+    const { TRANSFER_REASONS } = require("../../api/creditToken/tokenTransfer.model");
+    const { REASON_LABELS } = require("../../api/creditToken/tokenTransfer.mapper");
 
     return response.success(
         res,

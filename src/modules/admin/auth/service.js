@@ -1,10 +1,10 @@
-const User = require("../../user/model");
-const UserProfile = require("../../user/profile.model");
-const Partner = require("../../partner/model");
-const Kyc = require("../../kyc/model");
-const kycRepository = require("../../kyc/repository");
-const Wallet = require("../../wallet/model");
-const WalletTransaction = require("../../wallet/transaction.model");
+const User = require("../../api/user/model");
+const UserProfile = require("../../api/user/profile.model");
+const Partner = require("../../api/partner/model");
+const Kyc = require("../../api/kyc/model");
+const kycRepository = require("../../api/kyc/repository");
+const Wallet = require("../../api/wallet/model");
+const WalletTransaction = require("../../api/wallet/transaction.model");
 const Role = require("../../role/model");
 const ROLES = require("../../../constants/roles");
 
@@ -12,7 +12,7 @@ const ApiError = require("../../../utils/ApiError");
 const MESSAGES = require("../../../constants/messages");
 const { hash, compare } = require("../../../utils/password");
 const { generateAccessToken } = require("../../../utils/jwt");
-const notificationService = require("../../notification/service");
+const notificationService = require("../../api/notification/service");
 const {
     getAvatarPath,
     deleteAvatarFile,

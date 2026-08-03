@@ -1,4 +1,4 @@
-const rewardRuleService = require("../../rewards/rewardRule.service");
+const rewardRuleService = require("../../api/rewards/rewardRule.service");
 
 exports.getMeta = () => rewardRuleService.getMeta();
 

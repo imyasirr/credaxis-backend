@@ -6,7 +6,7 @@ const {
     INSTALLMENT_STATES,
     API_LOG_STATUS,
     WEBHOOK_ENTITY_TYPES,
-} = require("../../mandate/constants");
+} = require("../../api/mandate/constants");
 
 exports.listMandates = [
     query("page").optional().isInt({ min: 1 }),
@@ -48,6 +48,13 @@ exports.retryInstallment = [
     body("schedule_date")
         .matches(/^\d{4}-\d{2}-\d{2}$/)
         .withMessage("schedule_date must be YYYY-MM-DD"),
+];
+
+exports.recon = [
+    body("page_number").optional().isInt({ min: 1 }),
+    body("page_size").optional().isInt({ min: 1, max: 100 }),
+    body("ids").optional().isArray(),
+    body("ids.*").optional().trim().notEmpty(),
 ];
 
 exports.listTransactions = [

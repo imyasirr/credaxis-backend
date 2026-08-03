@@ -2,7 +2,7 @@ const { verifyToken } = require("../utils/jwt");
 const ApiError = require("../utils/ApiError");
 const MESSAGES = require("../constants/messages");
 const ROLES = require("../constants/roles");
-const userRepository = require("../modules/user/repository");
+const userRepository = require("../modules/api/user/repository");
 const roleRepository = require("../modules/role/repository");
 const {
     canAuthenticate,
@@ -49,7 +49,7 @@ module.exports = async (req, res, next) => {
             throw new ApiError(401, MESSAGES.UNAUTHORIZED);
         }
 
-        const { getPartnerAccess } = require("../modules/partner/access");
+        const { getPartnerAccess } = require("../modules/api/partner/access");
         const partnerAccess = await getPartnerAccess(user._id);
 
         // Lazy migrate: old flow set role=PARTNER on approve. Restore USER role

@@ -1,8 +1,8 @@
-const User = require("../../user/model");
-const UserProfile = require("../../user/profile.model");
-const UserReward = require("../../rewards/model");
-const { formatUserReward } = require("../../rewards/mapper");
-const notificationService = require("../../notification/service");
+const User = require("../../api/user/model");
+const UserProfile = require("../../api/user/profile.model");
+const UserReward = require("../../api/rewards/model");
+const { formatUserReward } = require("../../api/rewards/mapper");
+const notificationService = require("../../api/notification/service");
 const ApiError = require("../../../utils/ApiError");
 
 const SORTABLE_FIELDS = {

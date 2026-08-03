@@ -1,4 +1,4 @@
-const { formatRewardPrize } = require("../../rewards/rewardPrize.mapper");
+const { formatRewardPrize } = require("../../api/rewards/rewardPrize.mapper");
 const ApiError = require("../../../utils/ApiError");
 
 const PRIZE_TYPES = ["CASH", "TOKEN", "COUPON", "COINS", "NO_PRIZE"];

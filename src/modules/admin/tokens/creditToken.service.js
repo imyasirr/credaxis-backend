@@ -1,5 +1,5 @@
-const CreditToken = require("../../creditToken/model");
-const { formatCreditToken } = require("../../creditToken/mapper");
+const CreditToken = require("../../api/creditToken/model");
+const { formatCreditToken } = require("../../api/creditToken/mapper");
 const ApiError = require("../../../utils/ApiError");
 
 const TOKEN_TYPES = ["CRIF", "CIBIL", "EXPERIAN"];

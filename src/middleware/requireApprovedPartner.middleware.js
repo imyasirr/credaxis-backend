@@ -1,5 +1,5 @@
 const ApiError = require("../utils/ApiError");
-const { getPartnerAccess } = require("../modules/partner/access");
+const { getPartnerAccess } = require("../modules/api/partner/access");
 
 /**
  * Partner-app routes: user must have an APPROVED Partner application.

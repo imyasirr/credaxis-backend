@@ -1,4 +1,4 @@
-const User = require("../modules/user/model");
+const User = require("../modules/api/user/model");
 
 /**
  * Generate unique user referral code: USR + 6 chars.

@@ -1,7 +1,7 @@
-const User = require("../../user/model");
-const UserProfile = require("../../user/profile.model");
-const TokenPurchase = require("../../creditToken/tokenPurchase.model");
-const { formatTokenPurchase } = require("../../creditToken/tokenPurchase.mapper");
+const User = require("../../api/user/model");
+const UserProfile = require("../../api/user/profile.model");
+const TokenPurchase = require("../../api/creditToken/tokenPurchase.model");
+const { formatTokenPurchase } = require("../../api/creditToken/tokenPurchase.mapper");
 const ApiError = require("../../../utils/ApiError");
 
 const SORTABLE_FIELDS = {

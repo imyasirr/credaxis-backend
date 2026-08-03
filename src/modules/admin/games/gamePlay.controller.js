@@ -1,4 +1,4 @@
-const userGamePlayService = require("../../games/userGamePlay.service");
+const userGamePlayService = require("../../api/games/userGamePlay.service");
 const asyncHandler = require("../../../utils/asyncHandler");
 const response = require("../../../utils/response");
 const { body } = require("express-validator");

@@ -1,4 +1,4 @@
-const coinTransferService = require("../../coins/transfer.service");
+const coinTransferService = require("../../api/coins/transfer.service");
 const asyncHandler = require("../../../utils/asyncHandler");
 const response = require("../../../utils/response");
 
@@ -21,8 +21,8 @@ exports.getTransferById = asyncHandler(async (req, res) => {
 });
 
 exports.getTransferReasons = asyncHandler(async (req, res) => {
-    const { TRANSFER_REASONS } = require("../../coins/transfer.model");
-    const { REASON_LABELS } = require("../../coins/transfer.mapper");
+    const { TRANSFER_REASONS } = require("../../api/coins/transfer.model");
+    const { REASON_LABELS } = require("../../api/coins/transfer.mapper");
 
     return response.success(
         res,

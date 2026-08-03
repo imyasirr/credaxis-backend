@@ -359,6 +359,12 @@ router.get(
     validate,
     adminMandateController.getMandates
 );
+router.post(
+    "/mandates/recon",
+    adminMandateValidator.recon,
+    validate,
+    adminMandateController.reconMandates
+);
 router.get(
     "/mandates/:id",
     adminMandateValidator.mandateId,
@@ -383,6 +389,12 @@ router.get(
     adminMandateValidator.listInstallments,
     validate,
     adminMandateController.getInstallments
+);
+router.post(
+    "/mandate-installments/recon",
+    adminMandateValidator.recon,
+    validate,
+    adminMandateController.reconInstallments
 );
 router.get(
     "/mandate-installments/:id",

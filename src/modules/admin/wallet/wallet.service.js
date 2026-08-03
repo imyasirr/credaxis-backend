@@ -1,18 +1,18 @@
 const mongoose = require("mongoose");
 
-const User = require("../../user/model");
-const UserProfile = require("../../user/profile.model");
-const Wallet = require("../../wallet/model");
-const WalletTransaction = require("../../wallet/transaction.model");
+const User = require("../../api/user/model");
+const UserProfile = require("../../api/user/profile.model");
+const Wallet = require("../../api/wallet/model");
+const WalletTransaction = require("../../api/wallet/transaction.model");
 const Role = require("../../role/model");
 const ROLES = require("../../../constants/roles");
 
 const ApiError = require("../../../utils/ApiError");
-const notificationService = require("../../notification/service");
+const notificationService = require("../../api/notification/service");
 const {
     formatWallet,
     formatTransaction,
-} = require("../../wallet/mapper");
+} = require("../../api/wallet/mapper");
 
 const generateWalletNumber = () =>
     "WAL" + Date.now() + Math.floor(Math.random() * 1000);

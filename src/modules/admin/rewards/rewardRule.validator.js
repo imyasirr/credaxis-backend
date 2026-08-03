@@ -1,5 +1,5 @@
 const { body, param, query } = require("express-validator");
-const { TRIGGERS, AUDIENCES, GAME_TYPES } = require("../../rewards/rewardRule.model");
+const { TRIGGERS, AUDIENCES, GAME_TYPES } = require("../../api/rewards/rewardRule.model");
 
 const CATALOG_GAMES = ["WHEEL", "SCRATCH", "SHUFFLE"];
 

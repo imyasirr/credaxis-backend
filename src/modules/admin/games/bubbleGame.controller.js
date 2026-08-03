@@ -1,4 +1,4 @@
-const bubbleGameService = require("../../bubbleGame/service");
+const bubbleGameService = require("../../api/bubbleGame/service");
 const asyncHandler = require("../../../utils/asyncHandler");
 const response = require("../../../utils/response");
 const { body } = require("express-validator");

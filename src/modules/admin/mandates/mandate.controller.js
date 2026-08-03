@@ -1,5 +1,5 @@
 const adminMandateService = require("./mandate.service");
-const { getClientIp } = require("../../mandate/apiLog.service");
+const { getClientIp } = require("../../api/mandate/apiLog.service");
 const asyncHandler = require("../../../utils/asyncHandler");
 const response = require("../../../utils/response");
 
@@ -34,6 +34,15 @@ exports.cancelMandate = asyncHandler(async (req, res) => {
         getClientIp(req)
     );
     return response.success(res, "Mandate cancelled successfully", data);
+});
+
+exports.reconMandates = asyncHandler(async (req, res) => {
+    const data = await adminMandateService.reconMandates(
+        req.body,
+        req.user.id,
+        getClientIp(req)
+    );
+    return response.success(res, "Mandates reconciled successfully", data);
 });
 
 exports.getInstallments = asyncHandler(async (req, res) => {
@@ -72,6 +81,15 @@ exports.retryInstallment = asyncHandler(async (req, res) => {
         getClientIp(req)
     );
     return response.success(res, "Installment retry scheduled", data);
+});
+
+exports.reconInstallments = asyncHandler(async (req, res) => {
+    const data = await adminMandateService.reconInstallments(
+        req.body,
+        req.user.id,
+        getClientIp(req)
+    );
+    return response.success(res, "Installments reconciled successfully", data);
 });
 
 exports.getTransactions = asyncHandler(async (req, res) => {

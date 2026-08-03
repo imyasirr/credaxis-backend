@@ -1,5 +1,5 @@
-const WheelPrize = require("../../rewards/wheelPrize.model");
-const { formatWheelPrize } = require("../../rewards/wheelPrize.mapper");
+const WheelPrize = require("../../api/rewards/wheelPrize.model");
+const { formatWheelPrize } = require("../../api/rewards/wheelPrize.mapper");
 const ApiError = require("../../../utils/ApiError");
 
 const PRIZE_TYPES = ["CASH", "TOKEN", "COUPON", "COINS", "NO_PRIZE"];

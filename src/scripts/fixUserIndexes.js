@@ -3,7 +3,7 @@ require("dotenv").config();
 const mongoose = require("mongoose");
 
 const connectDB = require("../config/db");
-const User = require("../modules/user/model");
+const User = require("../modules/api/user/model");
 
 async function fixUserIndexes() {
     await connectDB();

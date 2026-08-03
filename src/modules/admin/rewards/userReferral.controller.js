@@ -1,4 +1,4 @@
-const userReferralService = require("../../user/referral.service");
+const userReferralService = require("../../api/user/referral.service");
 const asyncHandler = require("../../../utils/asyncHandler");
 const response = require("../../../utils/response");
 

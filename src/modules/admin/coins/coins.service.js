@@ -1,16 +1,16 @@
-const User = require("../../user/model");
-const UserProfile = require("../../user/profile.model");
-const CoinWallet = require("../../coins/model");
-const CoinTransaction = require("../../coins/transaction.model");
+const User = require("../../api/user/model");
+const UserProfile = require("../../api/user/profile.model");
+const CoinWallet = require("../../api/coins/model");
+const CoinTransaction = require("../../api/coins/transaction.model");
 const Role = require("../../role/model");
-const coinService = require("../../coins/service");
+const coinService = require("../../api/coins/service");
 const ROLES = require("../../../constants/roles");
 const ApiError = require("../../../utils/ApiError");
-const notificationService = require("../../notification/service");
+const notificationService = require("../../api/notification/service");
 const {
     formatCoinWallet,
     formatCoinTransaction,
-} = require("../../coins/mapper");
+} = require("../../api/coins/mapper");
 
 const formatAdminCoinWallet = (wallet, profileMap = {}) => {
     const data = wallet.toObject ? wallet.toObject() : wallet;

@@ -3,9 +3,9 @@ require("dotenv").config();
 const mongoose = require("mongoose");
 
 const connectDB = require("../../config/db");
-const User = require("../user/model");
-const UserProfile = require("../user/profile.model");
-const Wallet = require("../wallet/model");
+const User = require("../api/user/model");
+const UserProfile = require("../api/user/profile.model");
+const Wallet = require("../api/wallet/model");
 const Role = require("../role/model");
 const ROLES = require("../../constants/roles");
 const { hash } = require("../../utils/password");

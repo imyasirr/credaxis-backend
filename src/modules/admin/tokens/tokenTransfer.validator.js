@@ -1,5 +1,5 @@
 const { body, query } = require("express-validator");
-const { TRANSFER_REASONS, TOKEN_TYPES } = require("../../creditToken/tokenTransfer.model");
+const { TRANSFER_REASONS, TOKEN_TYPES } = require("../../api/creditToken/tokenTransfer.model");
 
 exports.createTransfer = [
     body("partnerId").notEmpty().withMessage("Partner is required"),

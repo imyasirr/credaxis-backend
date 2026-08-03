@@ -1,18 +1,18 @@
-const User = require("../../user/model");
-const UserProfile = require("../../user/profile.model");
-const Mandate = require("../../mandate/mandate.model");
-const Installment = require("../../mandate/installment.model");
-const MandateTransaction = require("../../mandate/transaction.model");
-const MandateWebhookLog = require("../../mandate/webhookLog.model");
-const MandateApiLog = require("../../mandate/apiLog.model");
-const gateway = require("../../mandate/rocketpay.gateway");
+const User = require("../../api/user/model");
+const UserProfile = require("../../api/user/profile.model");
+const Mandate = require("../../api/mandate/mandate.model");
+const Installment = require("../../api/mandate/installment.model");
+const MandateTransaction = require("../../api/mandate/transaction.model");
+const MandateWebhookLog = require("../../api/mandate/webhookLog.model");
+const MandateApiLog = require("../../api/mandate/apiLog.model");
+const gateway = require("../../api/mandate/rocketpay.gateway");
 const {
     formatMandate,
     formatInstallment,
     formatTransaction,
     formatWebhookLog,
     formatApiLog,
-} = require("../../mandate/mapper");
+} = require("../../api/mandate/mapper");
 const ApiError = require("../../../utils/ApiError");
 
 const isObjectId = (value) => {
@@ -70,6 +70,43 @@ const withUserName = (formatted, profileMap) => {
     return formatted;
 };
 
+const extractInstrument = (payer) => {
+    const inst = payer?.instrument;
+    if (!inst || typeof inst !== "object") return null;
+    return {
+        type: inst.type || (inst.vpa ? "VPA" : "BANK_ACCOUNT"),
+        accountNumber: inst.account_number || null,
+        ifsc: inst.ifsc || null,
+        accountHolderName:
+            inst.account_holder_name ||
+            inst.account_holder_name_at_bank ||
+            null,
+        vpa: inst.vpa || null,
+        bankCode: inst.bank_code || null,
+        branchName: inst.branch_name || null,
+    };
+};
+
+const enrichMandate = (formatted, profileMap) => {
+    const mandate = withUserName(formatted, profileMap);
+    if (!mandate) return mandate;
+    mandate.placedBy = mandate.user
+        ? {
+              id: mandate.user.id,
+              fullName: mandate.user.fullName || "",
+              mobile: mandate.user.mobile || "",
+              email: mandate.user.email || "",
+              status: mandate.user.status || "",
+          }
+        : null;
+    mandate.mandateFor = {
+        name: mandate.customerName || "",
+        mobile: mandate.customerMobile || "",
+    };
+    mandate.instrument = extractInstrument(mandate.payer);
+    return mandate;
+};
+
 exports.getDashboard = async () => {
     const [
         totalMandates,
@@ -111,6 +148,11 @@ exports.getDashboard = async () => {
         installmentByState.map((r) => [r._id || "UNKNOWN", r.count])
     );
 
+    const recentIds = recentMandates
+        .map((m) => m.user?._id?.toString())
+        .filter(Boolean);
+    const recentProfiles = await attachProfiles(recentIds);
+
     return {
         summary: {
             totalMandates,
@@ -131,7 +173,9 @@ exports.getDashboard = async () => {
         },
         mandateStateCounts,
         installmentStateCounts,
-        recentMandates: recentMandates.map(formatMandate),
+        recentMandates: recentMandates.map((m) =>
+            enrichMandate(formatMandate(m), recentProfiles)
+        ),
     };
 };
 
@@ -188,7 +232,7 @@ exports.getMandates = async (query = {}) => {
 
     return {
         mandates: items.map((m) =>
-            withUserName(formatMandate(m), profileMap)
+            enrichMandate(formatMandate(m), profileMap)
         ),
         pagination: buildPagination(page, limit, total),
     };
@@ -199,7 +243,22 @@ exports.getMandateById = async (id) => {
     const profileMap = doc.user?._id
         ? await attachProfiles([doc.user._id.toString()])
         : {};
-    return withUserName(formatMandate(doc), profileMap);
+    const mandate = enrichMandate(formatMandate(doc), profileMap);
+
+    const [installments, transactions] = await Promise.all([
+        Installment.find({ mandate: doc._id })
+            .sort({ dueDate: 1, createdAt: 1 })
+            .limit(50),
+        MandateTransaction.find({
+            $or: [{ mandate: doc._id }, { rocketpayMandateId: doc.rocketpayId }],
+        })
+            .sort({ createdAt: -1 })
+            .limit(30),
+    ]);
+
+    mandate.relatedInstallments = installments.map(formatInstallment);
+    mandate.relatedTransactions = transactions.map(formatTransaction);
+    return mandate;
 };
 
 exports.refreshMandate = async (id, adminUserId, ipAddress) => {
@@ -226,6 +285,64 @@ exports.cancelMandate = async (id, adminUserId, ipAddress) => {
         source: "ADMIN",
     });
     return { mandate: formatMandate(synced), rocketpay: data };
+};
+
+exports.reconMandates = async (body = {}, adminUserId, ipAddress) => {
+    const pageNumber = Number(body.page_number) || 1;
+    const pageSize = Math.min(Number(body.page_size) || 100, 100);
+    let ids = Array.isArray(body.ids)
+        ? body.ids.map(String).filter(Boolean)
+        : [];
+
+    if (!ids.length) {
+        const docs = await Mandate.find({
+            rocketpayId: { $ne: null },
+            deleted: { $ne: true },
+        })
+            .sort({ createdAt: 1 })
+            .skip((pageNumber - 1) * pageSize)
+            .limit(pageSize)
+            .select("rocketpayId");
+        ids = docs.map((d) => d.rocketpayId).filter(Boolean);
+    }
+
+    if (!ids.length) {
+        return {
+            synced: [],
+            rocketpay: {
+                items: [],
+                pagination: {
+                    page_number: pageNumber,
+                    page_size: pageSize,
+                    total_items: 0,
+                    total_pages: 0,
+                },
+            },
+        };
+    }
+
+    const payload = {
+        page_number: pageNumber,
+        page_size: pageSize,
+        ids,
+    };
+    const { data, synced } = await gateway.reconMandates(payload, {
+        userId: adminUserId,
+        ipAddress,
+        source: "ADMIN",
+    });
+
+    const list = Array.isArray(synced) ? synced : synced ? [synced] : [];
+    const userIds = list
+        .map((m) => m.user?._id?.toString() || m.user?.toString?.())
+        .filter(Boolean);
+    const profileMap = await attachProfiles(userIds);
+
+    return {
+        synced: list.map((m) => enrichMandate(formatMandate(m), profileMap)),
+        rocketpay: data,
+        requestedIds: ids,
+    };
 };
 
 exports.getInstallments = async (query = {}) => {
@@ -277,15 +394,56 @@ exports.getInstallments = async (query = {}) => {
         Installment.countDocuments(filter),
     ]);
 
+    const userIds = items
+        .map((m) => m.user?._id?.toString())
+        .filter(Boolean);
+    const profileMap = await attachProfiles(userIds);
+
     return {
-        installments: items.map(formatInstallment),
+        installments: items.map((item) => {
+            const formatted = withUserName(formatInstallment(item), profileMap);
+            if (formatted) {
+                formatted.placedBy = formatted.user
+                    ? {
+                          id: formatted.user.id,
+                          fullName: formatted.user.fullName || "",
+                          mobile: formatted.user.mobile || "",
+                          email: formatted.user.email || "",
+                      }
+                    : null;
+                formatted.mandateFor = {
+                    name: item.payer?.account?.name || "",
+                    mobile: item.payer?.account?.mobile_number || "",
+                };
+            }
+            return formatted;
+        }),
         pagination: buildPagination(page, limit, total),
     };
 };
 
 exports.getInstallmentById = async (id) => {
     const doc = await resolveAdminInstallment(id);
-    return formatInstallment(doc);
+    const profileMap = doc.user?._id
+        ? await attachProfiles([doc.user._id.toString()])
+        : {};
+    const formatted = withUserName(formatInstallment(doc), profileMap);
+    if (formatted) {
+        formatted.placedBy = formatted.user
+            ? {
+                  id: formatted.user.id,
+                  fullName: formatted.user.fullName || "",
+                  mobile: formatted.user.mobile || "",
+                  email: formatted.user.email || "",
+              }
+            : null;
+        formatted.mandateFor = {
+            name: doc.payer?.account?.name || "",
+            mobile: doc.payer?.account?.mobile_number || "",
+        };
+        formatted.instrument = extractInstrument(doc.payer);
+    }
+    return formatted;
 };
 
 exports.refreshInstallment = async (id, adminUserId, ipAddress) => {
@@ -321,6 +479,59 @@ exports.retryInstallment = async (id, body, adminUserId, ipAddress) => {
         { userId: adminUserId, ipAddress, source: "ADMIN" }
     );
     return { installment: formatInstallment(synced), rocketpay: data };
+};
+
+exports.reconInstallments = async (body = {}, adminUserId, ipAddress) => {
+    const pageNumber = Number(body.page_number) || 1;
+    const pageSize = Math.min(Number(body.page_size) || 100, 100);
+    let ids = Array.isArray(body.ids)
+        ? body.ids.map(String).filter(Boolean)
+        : [];
+
+    if (!ids.length) {
+        const docs = await Installment.find({
+            rocketpayId: { $ne: null },
+            deleted: { $ne: true },
+        })
+            .sort({ createdAt: 1 })
+            .skip((pageNumber - 1) * pageSize)
+            .limit(pageSize)
+            .select("rocketpayId");
+        ids = docs.map((d) => d.rocketpayId).filter(Boolean);
+    }
+
+    if (!ids.length) {
+        return {
+            synced: [],
+            rocketpay: {
+                items: [],
+                pagination: {
+                    page_number: pageNumber,
+                    page_size: pageSize,
+                    total_items: 0,
+                    total_pages: 0,
+                },
+            },
+        };
+    }
+
+    const payload = {
+        page_number: pageNumber,
+        page_size: pageSize,
+        ids,
+    };
+    const { data, synced } = await gateway.reconInstallments(payload, {
+        userId: adminUserId,
+        ipAddress,
+        source: "ADMIN",
+    });
+
+    const list = Array.isArray(synced) ? synced : synced ? [synced] : [];
+    return {
+        synced: list.map(formatInstallment),
+        rocketpay: data,
+        requestedIds: ids,
+    };
 };
 
 exports.getTransactions = async (query = {}) => {

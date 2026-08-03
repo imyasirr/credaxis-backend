@@ -87,6 +87,10 @@ class RocketPayClient {
         return this.request("POST", `/v4/mandates/${mandateId}/cancel`);
     }
 
+    reconMandates(body) {
+        return this.request("POST", "/v4/mandates/recon", { body });
+    }
+
     createInstallment(mandateId, body) {
         return this.request("POST", `/v4/mandates/${mandateId}/installment`, {
             body,
@@ -119,6 +123,10 @@ class RocketPayClient {
         return this.request("POST", `/v4/installments/${installmentId}/retry`, {
             body,
         });
+    }
+
+    reconInstallments(body) {
+        return this.request("POST", "/v4/installments/recon", { body });
     }
 }
 

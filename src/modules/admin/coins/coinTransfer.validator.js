@@ -1,5 +1,5 @@
 const { body, query } = require("express-validator");
-const { TRANSFER_REASONS } = require("../../coins/transfer.model");
+const { TRANSFER_REASONS } = require("../../api/coins/transfer.model");
 
 exports.createTransfer = [
     body("mobile")
