@@ -11,6 +11,21 @@ exports.addMoney = [
         .isLength({ max: 200 }),
 ];
 
+exports.verifyPayment = [
+    body("razorpay_order_id")
+        .trim()
+        .notEmpty()
+        .withMessage("razorpay_order_id is required"),
+    body("razorpay_payment_id")
+        .trim()
+        .notEmpty()
+        .withMessage("razorpay_payment_id is required"),
+    body("razorpay_signature")
+        .trim()
+        .notEmpty()
+        .withMessage("razorpay_signature is required"),
+];
+
 exports.beneficiary = [
     body("beneficiaryName")
         .notEmpty()

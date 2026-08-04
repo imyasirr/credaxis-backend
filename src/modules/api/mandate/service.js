@@ -107,7 +107,7 @@ exports.createMandate = async (userId, body, ipAddress) => {
         source: "API",
     });
 
-    return { mandate: synced, rocketpay: data };
+    return { mandate: formatMandate(synced), rocketpay: data };
 };
 
 exports.listMyMandates = async (userId, query = {}) => {

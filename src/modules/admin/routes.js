@@ -39,6 +39,12 @@ const adminRewardRuleValidator = require("./rewards/rewardRule.validator");
 const adminMandateController = require("./mandates/mandate.controller");
 const adminMandateValidator = require("./mandates/mandate.validator");
 
+const adminSettingsController = require("./settings/settings.controller");
+const adminSettingsValidator = require("./settings/settings.validator");
+
+const adminPaymentController = require("./payments/payment.controller");
+const adminPaymentValidator = require("./payments/payment.validator");
+
 const adminWebsiteController = require("./website/controller");
 const adminWebsiteValidator = require("./website/validator");
 
@@ -306,6 +312,40 @@ router.put(
     validate,
     adminUserReferralController.updateUserReferralSetting
 );
+router.get(
+    "/settings/credit-check-fee",
+    adminSettingsController.getCreditCheckFee
+);
+router.put(
+    "/settings/credit-check-fee",
+    adminSettingsValidator.updateCreditCheckFee,
+    validate,
+    adminSettingsController.updateCreditCheckFee
+);
+router.get(
+    "/settings/first-topup-bonus",
+    adminSettingsController.getFirstTopupBonus
+);
+router.put(
+    "/settings/first-topup-bonus",
+    adminSettingsValidator.updateFirstTopupBonus,
+    validate,
+    adminSettingsController.updateFirstTopupBonus
+);
+
+router.get(
+    "/payments",
+    adminPaymentValidator.listPayments,
+    validate,
+    adminPaymentController.listPayments
+);
+router.get(
+    "/payments/:id",
+    adminPaymentValidator.paymentId,
+    validate,
+    adminPaymentController.getPaymentById
+);
+
 router.get(
     "/user-referrals",
     adminUserReferralValidator.getUserReferrals,

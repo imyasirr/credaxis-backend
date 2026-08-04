@@ -69,6 +69,13 @@ exports.fetch = [
     }),
     body("generatePdf").optional().isBoolean(),
     body("referenceId").optional().trim().isLength({ min: 6, max: 64 }),
+    body("paymentId")
+        .notEmpty()
+        .withMessage("paymentId is required")
+        .bail()
+        .isMongoId()
+        .withMessage("Invalid paymentId"),
+    body("payment_id").optional().isMongoId(),
 ];
 
 exports.listMine = [

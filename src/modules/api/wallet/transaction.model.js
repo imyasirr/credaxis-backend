@@ -47,6 +47,7 @@ const walletTransactionSchema = new mongoose.Schema(
                 "UPI",
                 "CARD",
                 "CASH",
+                "RAZORPAY",
             ],
             default: "WALLET",
         },

@@ -1,6 +1,8 @@
 const BubbleGameSetting = require("./model");
 const coinService = require("../coins/service");
 const userGamePlayService = require("../games/userGamePlay.service");
+const { grantReward } = require("../rewards/service");
+const mongoose = require("mongoose");
 const ApiError = require("../../../utils/ApiError");
 
 const DEFAULTS = {
@@ -153,14 +155,24 @@ exports.completePlay = async (userId, body = {}) => {
     }
 
     let coinWallet = await coinService.getMyCoins(userId);
+    let userReward = null;
 
     if (coins > 0) {
-        coinWallet = await coinService.creditCoins(userId, {
-            amount: coins,
+        // Create UserReward (shows in rewards history) + credit coins once via ledger
+        userReward = await grantReward({
+            userId,
+            gameType: "BUBBLE",
+            prize: {
+                _id: new mongoose.Types.ObjectId(),
+                title: `Bubble Pop — ${popped} bubble${popped === 1 ? "" : "s"}`,
+                prizeType: "COINS",
+                value: coins,
+                color: "#22c55e",
+                expiryDays: 0,
+            },
             source: "GAME",
-            description: `Bubble Pop — ${popped} bubble${popped === 1 ? "" : "s"}`,
-            referenceId: `bubble_${userId}_${Date.now()}`,
         });
+        coinWallet = await coinService.getMyCoins(userId);
     }
 
     return {
@@ -170,6 +182,7 @@ exports.completePlay = async (userId, body = {}) => {
         hitBomb: false,
         remainingPlays: consumed.remainingPlays,
         coinWallet,
+        userReward,
         message:
             coins > 0
                 ? `${coins} coin${coins === 1 ? "" : "s"} added to your wallet`

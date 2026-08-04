@@ -418,78 +418,115 @@ exports.fetchForUser = async (userId, body = {}) => {
         throw new ApiError(404, "User not found");
     }
 
-    const forSelf = body.forSelf !== false;
-    const mobile = String(body.mobile || body.phone || "").trim();
+    const paymentService = require("../payments/service");
+    const paymentId = body.paymentId || body.payment_id;
+    let claimedPayment = null;
 
-    if (!forSelf) {
-        return exports.fetchCreditReportSummary({
+    try {
+        claimedPayment = await paymentService.consumeCreditCheckPayment(
             userId,
-            source: "USER",
-            subjectType: "OTHER",
-            name: body.name?.trim(),
-            mobile,
-            email: body.email?.trim(),
-            pan: body.pan?.trim()?.toUpperCase(),
-            consent: body.consent !== false,
-            consentPurpose: body.consentPurpose,
-            generatePdf: body.generatePdf !== false,
-            referenceId: body.referenceId,
-        });
-    }
-
-    const [profile, kyc] = await Promise.all([
-        UserProfile.findOne({ user: userId }),
-        Kyc.findOne({ user: userId }),
-    ]);
-
-    const nameFromProfile = [profile?.firstName, profile?.lastName]
-        .filter(Boolean)
-        .join(" ")
-        .trim();
-
-    const name = body.name?.trim() || nameFromProfile || null;
-    const resolvedMobile = mobile || user.mobile;
-    const email =
-        body.email?.trim() ||
-        user.email ||
-        null;
-    const pan =
-        body.pan?.trim()?.toUpperCase() ||
-        kyc?.panNumber ||
-        null;
-
-    if (!name) {
-        throw new ApiError(
-            400,
-            "Name is required. Complete your profile or pass name in request"
+            paymentId
         );
-    }
-    if (!email) {
-        throw new ApiError(
-            400,
-            "Email is required. Complete your profile or pass email in request"
-        );
-    }
-    if (!pan) {
-        throw new ApiError(
-            400,
-            "PAN is required. Complete KYC or pass pan in request"
-        );
-    }
 
-    return exports.fetchCreditReportSummary({
-        userId,
-        source: "USER",
-        subjectType: "SELF",
-        name,
-        mobile: resolvedMobile,
-        email,
-        pan,
-        consent: body.consent !== false,
-        consentPurpose: body.consentPurpose,
-        generatePdf: body.generatePdf !== false,
-        referenceId: body.referenceId,
-    });
+        const forSelf = body.forSelf !== false;
+        const mobile = String(body.mobile || body.phone || "").trim();
+
+        let report;
+
+        if (!forSelf) {
+            report = await exports.fetchCreditReportSummary({
+                userId,
+                source: "USER",
+                subjectType: "OTHER",
+                name: body.name?.trim(),
+                mobile,
+                email: body.email?.trim(),
+                pan: body.pan?.trim()?.toUpperCase(),
+                consent: body.consent !== false,
+                consentPurpose: body.consentPurpose,
+                generatePdf: body.generatePdf !== false,
+                referenceId: body.referenceId,
+            });
+        } else {
+            const [profile, kyc] = await Promise.all([
+                UserProfile.findOne({ user: userId }),
+                Kyc.findOne({ user: userId }),
+            ]);
+
+            const nameFromProfile = [profile?.firstName, profile?.lastName]
+                .filter(Boolean)
+                .join(" ")
+                .trim();
+
+            const name = body.name?.trim() || nameFromProfile || null;
+            const resolvedMobile = mobile || user.mobile;
+            const email = body.email?.trim() || user.email || null;
+            const pan =
+                body.pan?.trim()?.toUpperCase() || kyc?.panNumber || null;
+
+            if (!name) {
+                throw new ApiError(
+                    400,
+                    "Name is required. Complete your profile or pass name in request"
+                );
+            }
+            if (!email) {
+                throw new ApiError(
+                    400,
+                    "Email is required. Complete your profile or pass email in request"
+                );
+            }
+            if (!pan) {
+                throw new ApiError(
+                    400,
+                    "PAN is required. Complete KYC or pass pan in request"
+                );
+            }
+
+            report = await exports.fetchCreditReportSummary({
+                userId,
+                source: "USER",
+                subjectType: "SELF",
+                name,
+                mobile: resolvedMobile,
+                email,
+                pan,
+                consent: body.consent !== false,
+                consentPurpose: body.consentPurpose,
+                generatePdf: body.generatePdf !== false,
+                referenceId: body.referenceId,
+            });
+        }
+
+        await paymentService.attachCreditReportReference(
+            claimedPayment._id,
+            report?.id || report?._id
+        );
+
+        return report;
+    } catch (error) {
+        // Allow retry with same payment if report fetch itself failed after claim
+        if (claimedPayment?._id) {
+            const Payment = require("../payments/model");
+            const {
+                PAYMENT_STATUSES,
+            } = require("../../../integrations/razorpay/constants");
+            await Payment.updateOne(
+                {
+                    _id: claimedPayment._id,
+                    status: PAYMENT_STATUSES.CONSUMED,
+                    referenceType: null,
+                },
+                {
+                    $set: {
+                        status: PAYMENT_STATUSES.PAID,
+                        consumedAt: null,
+                    },
+                }
+            );
+        }
+        throw error;
+    }
 };
 
 /**

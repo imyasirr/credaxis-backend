@@ -125,8 +125,16 @@ const sendOtp = async (mobile, purpose, userId = null) => {
         expiresAt: getOtpExpiry(5),
     });
 
-    // TODO: integrate SMS provider
-    console.log(`OTP for ${mobile} (${purpose}): ${otp}`);
+    const fast2sms = require("../../../integrations/fast2sms/fast2sms.client");
+    try {
+        await fast2sms.sendOtp(mobile, otp);
+    } catch (err) {
+        console.error(`[Fast2SMS] OTP send failed for ${mobile}:`, err.message);
+        // In non-production, still allow login via response otp if SMS fails
+        if (process.env.NODE_ENV === "production") {
+            throw err;
+        }
+    }
 
     const payload = {
         redirectTo: "otp",

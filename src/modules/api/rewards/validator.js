@@ -12,7 +12,7 @@ exports.getMyRewards = [
         .optional()
         .trim()
         .toUpperCase()
-        .isIn(["WHEEL", "SCRATCH", "SHUFFLE"]),
+        .isIn(["WHEEL", "SCRATCH", "SHUFFLE", "BUBBLE"]),
     query("prizeType")
         .optional()
         .trim()

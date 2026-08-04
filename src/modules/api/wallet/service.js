@@ -47,19 +47,32 @@ exports.getTransactions = async (userId, query) => {
 };
 
 /**
- * First-time wallet top-up: grant equal coins once + REWARD notification.
- * Claims atomically via firstTopupBonusGivenAt so concurrent top-ups cannot double-credit.
+ * First eligible wallet top-up: if amount ≥ configured min (default ₹100),
+ * grant equal coins once. Sub-min first top-ups do NOT consume the once-flag
+ * so a later top-up of ≥ min still qualifies.
  */
 const grantFirstTopupCoinBonus = async (userId, walletId, amount) => {
     const Wallet = require("./model");
     const coinService = require("../coins/service");
+    const firstTopupBonusService = require("./firstTopupBonus.service");
+
+    const topupAmount = Number(amount) || 0;
+    const setting = await firstTopupBonusService.getFirstTopupBonusSetting();
+
+    if (!setting.enabled) {
+        return null;
+    }
+
+    if (topupAmount < setting.minAmount) {
+        return null;
+    }
 
     const claimed = await Wallet.findOneAndUpdate(
         { _id: walletId, firstTopupBonusGivenAt: null },
         {
             $set: {
                 firstTopupBonusGivenAt: new Date(),
-                firstTopupBonusAmount: amount,
+                firstTopupBonusAmount: topupAmount,
             },
         },
         { new: true }
@@ -71,22 +84,26 @@ const grantFirstTopupCoinBonus = async (userId, walletId, amount) => {
 
     try {
         const coinResult = await coinService.creditCoins(userId, {
-            amount,
+            amount: topupAmount,
             source: "REWARD",
             referenceId: String(walletId),
-            description: `First wallet top-up bonus: ${amount} coins`,
+            description: `First wallet top-up bonus: ${topupAmount} coins`,
             notify: false,
         });
 
         await notificationService.notifySafe(userId, {
             title: "First time wallet money added",
-            message: `You received ${amount} coins as a first top-up reward`,
+            message: `You received ${topupAmount} coins as a first top-up reward (min ₹${setting.minAmount})`,
             type: "REWARD",
         });
 
-        return coinResult;
+        return {
+            coins: topupAmount,
+            minAmount: setting.minAmount,
+            message: `First time wallet money added — ${topupAmount} coins credited`,
+            coinWallet: coinResult,
+        };
     } catch (error) {
-        // Roll back claim so a later top-up can retry the bonus
         await Wallet.updateOne(
             { _id: walletId, firstTopupBonusGivenAt: { $ne: null } },
             {
@@ -101,7 +118,44 @@ const grantFirstTopupCoinBonus = async (userId, walletId, amount) => {
     }
 };
 
+/**
+ * Create Razorpay order for wallet top-up (does not credit until verify).
+ */
 exports.addMoney = async (userId, { amount, description }) => {
+    const wallet = await walletRepository.findByUserId(userId);
+
+    if (!wallet) {
+        throw new ApiError(404, "Wallet not found");
+    }
+
+    if (wallet.status !== "ACTIVE") {
+        throw new ApiError(400, "Wallet is not active");
+    }
+
+    const paymentService = require("../payments/service");
+
+    return paymentService.createPayment(userId, {
+        purpose: paymentService.PAYMENT_PURPOSES.WALLET_TOPUP,
+        amount,
+        description: description || "Wallet top-up",
+    });
+};
+
+/**
+ * Verify Razorpay payment and credit wallet.
+ */
+exports.verifyAddMoney = async (userId, payload) => {
+    const paymentService = require("../payments/service");
+    return paymentService.verifyPayment(userId, payload);
+};
+
+/**
+ * Called by payments fulfiller after Razorpay signature verified.
+ */
+exports.creditAfterOnlinePayment = async (
+    userId,
+    { amount, description, referenceId = null }
+) => {
     const session = await mongoose.startSession();
     session.startTransaction();
 
@@ -116,8 +170,13 @@ exports.addMoney = async (userId, { amount, description }) => {
             throw new ApiError(400, "Wallet is not active");
         }
 
+        const creditAmount = Number(amount);
+        if (!creditAmount || creditAmount <= 0) {
+            throw new ApiError(400, "Amount must be greater than 0");
+        }
+
         const openingBalance = wallet.availableBalance;
-        const closingBalance = openingBalance + amount;
+        const closingBalance = openingBalance + creditAmount;
 
         wallet.availableBalance = closingBalance;
         wallet.totalBalance = closingBalance;
@@ -128,9 +187,10 @@ exports.addMoney = async (userId, { amount, description }) => {
                 wallet: wallet._id,
                 user: userId,
                 transactionId: generateTransactionId(),
+                referenceId: referenceId || null,
                 transactionType: "CREDIT",
-                paymentMethod: "WALLET",
-                amount,
+                paymentMethod: "RAZORPAY",
+                amount: creditAmount,
                 openingBalance,
                 closingBalance,
                 description: description || "Wallet top-up",
@@ -143,14 +203,14 @@ exports.addMoney = async (userId, { amount, description }) => {
 
         await notificationService.notifySafe(userId, {
             title: "Money Added",
-            message: `₹${amount} added to your wallet successfully`,
+            message: `₹${creditAmount} added to your wallet successfully`,
             type: "SUCCESS",
         });
 
         const firstTopupBonus = await grantFirstTopupCoinBonus(
             userId,
             wallet._id,
-            amount
+            creditAmount
         );
 
         return {
@@ -159,9 +219,9 @@ exports.addMoney = async (userId, { amount, description }) => {
             ...(firstTopupBonus
                 ? {
                       firstTopupBonus: {
-                          coins: amount,
-                          message:
-                              "First time wallet money added — equal coins credited",
+                          coins: firstTopupBonus.coins,
+                          minAmount: firstTopupBonus.minAmount,
+                          message: firstTopupBonus.message,
                       },
                   }
                 : {}),

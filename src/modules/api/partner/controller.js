@@ -92,7 +92,7 @@ exports.purchaseTokens = asyncHandler(async (req, res) => {
     const method = String(req.body.paymentMethod || "WALLET").toUpperCase();
     const message =
         method === "ONLINE"
-            ? "Online order created (Razorpay coming soon)"
+            ? "Online order created. Complete Razorpay checkout then verify"
             : "Tokens purchased successfully";
     return response.success(res, message, data, 201);
 });

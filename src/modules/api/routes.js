@@ -6,6 +6,7 @@ const router = express.Router();
 router.use("/auth", require("./auth/routes"));
 router.use("/user", require("./user/routes"));
 router.use("/wallet", require("./wallet/routes"));
+router.use("/payments", require("./payments/routes"));
 router.use("/coins", require("./coins/routes"));
 router.use("/kyc", require("./kyc/routes"));
 router.use("/notifications", require("./notification/routes"));

@@ -28,6 +28,13 @@ router.post(
     validate,
     walletController.addMoney
 );
+router.post(
+    "/verify-payment",
+    requireAction(ACTIONS.WALLET_WRITE),
+    walletValidator.verifyPayment,
+    validate,
+    walletController.verifyAddMoney
+);
 
 router.get(
     "/beneficiaries",

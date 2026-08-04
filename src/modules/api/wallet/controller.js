@@ -15,7 +15,17 @@ exports.getTransactions = asyncHandler(async (req, res) => {
 
 exports.addMoney = asyncHandler(async (req, res) => {
     const data = await walletService.addMoney(req.user.id, req.body);
-    return response.success(res, "Money added successfully", data, 201);
+    return response.success(
+        res,
+        "Payment order created. Complete Razorpay checkout then verify",
+        data,
+        201
+    );
+});
+
+exports.verifyAddMoney = asyncHandler(async (req, res) => {
+    const data = await walletService.verifyAddMoney(req.user.id, req.body);
+    return response.success(res, "Wallet topped up successfully", data);
 });
 
 exports.getBeneficiaries = asyncHandler(async (req, res) => {

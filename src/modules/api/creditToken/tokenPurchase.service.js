@@ -151,13 +151,13 @@ exports.purchaseWithWallet = async (userId, { tokenPlanId }) => {
 };
 
 /**
- * Online / Razorpay order stub.
- * Creates a PENDING purchase. Razorpay SDK wiring comes later.
+ * Online / Razorpay order via shared Razorpay client.
  */
 exports.createOnlineOrder = async (userId, { tokenPlanId }) => {
     const partner = await getApprovedPartner(userId);
     const plan = await getActivePlan(tokenPlanId);
     const purchaseTxnId = generateTransactionId();
+    const razorpayClient = require("../../../integrations/razorpay/razorpay.client");
 
     const purchase = await TokenPurchase.create(
         buildPurchaseDoc(userId, partner._id, plan, "ONLINE", {
@@ -167,26 +167,45 @@ exports.createOnlineOrder = async (userId, { tokenPlanId }) => {
         })
     );
 
-    return {
-        purchase: formatTokenPurchase(purchase),
-        razorpay: {
-            ready: false,
-            message:
-                "Razorpay online payment will be available soon. Please use wallet for now.",
-            // Future fields when integrated:
-            // key: process.env.RAZORPAY_KEY_ID,
-            // orderId: razorpayOrder.id,
-            amount: Math.round(plan.price * 100), // paise
+    try {
+        const order = await razorpayClient.createOrder({
+            amountInr: plan.price,
             currency: "INR",
-            name: "CredAxis",
-            description: `${plan.title} — ${plan.quantity} ${plan.tokenType} tokens`,
+            receipt: `TP_${String(purchase._id).slice(-10)}`,
             notes: {
-                purchaseId: purchase._id.toString(),
+                purchaseId: String(purchase._id),
                 transactionId: purchaseTxnId,
-                partnerId: partner._id.toString(),
+                partnerId: String(partner._id),
+                purpose: "TOKEN_PURCHASE",
             },
-        },
-    };
+        });
+
+        purchase.razorpayOrderId = order.id;
+        await purchase.save();
+
+        return {
+            purchase: formatTokenPurchase(purchase),
+            razorpay: {
+                ready: true,
+                key: razorpayClient.getPublicKey(),
+                orderId: order.id,
+                amount: Math.round(plan.price * 100),
+                currency: "INR",
+                name: "CredAxis",
+                description: `${plan.title} — ${plan.quantity} ${plan.tokenType} tokens`,
+                notes: {
+                    purchaseId: purchase._id.toString(),
+                    transactionId: purchaseTxnId,
+                    partnerId: partner._id.toString(),
+                },
+            },
+        };
+    } catch (err) {
+        purchase.status = "FAILED";
+        purchase.failureReason = err.message || "Order creation failed";
+        await purchase.save();
+        throw err;
+    }
 };
 
 /**
@@ -207,9 +226,9 @@ exports.purchaseTokens = async (userId, body) => {
 };
 
 /**
- * Razorpay verify stub — will confirm payment + credit tokens later.
+ * Verify Razorpay payment and credit partner tokens.
  */
-exports.verifyOnlinePayment = async (userId, purchaseId, _payload = {}) => {
+exports.verifyOnlinePayment = async (userId, purchaseId, payload = {}) => {
     const partner = await getApprovedPartner(userId);
     const purchase = await TokenPurchase.findOne({
         _id: purchaseId,
@@ -232,10 +251,75 @@ exports.verifyOnlinePayment = async (userId, purchaseId, _payload = {}) => {
         };
     }
 
-    throw new ApiError(
-        501,
-        "Razorpay payment verification is not implemented yet. Use wallet purchase for now."
-    );
+    const razorpayOrderId = String(
+        payload.razorpay_order_id || purchase.razorpayOrderId || ""
+    ).trim();
+    const razorpayPaymentId = String(
+        payload.razorpay_payment_id || ""
+    ).trim();
+    const razorpaySignature = String(
+        payload.razorpay_signature || ""
+    ).trim();
+
+    if (!razorpayOrderId || !razorpayPaymentId || !razorpaySignature) {
+        throw new ApiError(
+            400,
+            "razorpay_order_id, razorpay_payment_id and razorpay_signature are required"
+        );
+    }
+
+    if (
+        purchase.razorpayOrderId &&
+        purchase.razorpayOrderId !== razorpayOrderId
+    ) {
+        throw new ApiError(400, "Order id does not match this purchase");
+    }
+
+    const razorpayClient = require("../../../integrations/razorpay/razorpay.client");
+    razorpayClient.verifyPaymentSignature({
+        razorpayOrderId,
+        razorpayPaymentId,
+        razorpaySignature,
+    });
+
+    const session = await mongoose.startSession();
+    session.startTransaction();
+
+    try {
+        await creditPartnerBalance(
+            partner._id,
+            partner.user,
+            purchase.tokenType,
+            purchase.quantity,
+            session
+        );
+
+        purchase.status = "SUCCESS";
+        purchase.purchasedAt = new Date();
+        purchase.razorpayOrderId = razorpayOrderId;
+        purchase.razorpayPaymentId = razorpayPaymentId;
+        purchase.razorpaySignature = razorpaySignature;
+        purchase.failureReason = "";
+        await purchase.save({ session });
+
+        await session.commitTransaction();
+
+        await notificationService.notifySafe(userId, {
+            title: "Tokens purchased",
+            message: `${purchase.quantity} ${purchase.tokenType} tokens added to your balance`,
+            type: "SUCCESS",
+        });
+
+        return {
+            purchase: formatTokenPurchase(purchase),
+            message: "Payment verified successfully",
+        };
+    } catch (error) {
+        await session.abortTransaction();
+        throw error;
+    } finally {
+        session.endSession();
+    }
 };
 
 exports.getUserPurchases = async (userId, query = {}) => {
