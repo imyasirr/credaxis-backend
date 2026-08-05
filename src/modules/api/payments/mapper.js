@@ -5,6 +5,7 @@ exports.formatPayment = (doc) => {
     return {
         id: data._id,
         purpose: data.purpose,
+        method: data.method || "ONLINE",
         amount: data.amount,
         currency: data.currency || "INR",
         status: data.status,

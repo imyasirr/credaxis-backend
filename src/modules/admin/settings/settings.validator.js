@@ -7,6 +7,23 @@ exports.updateCreditCheckFee = [
         .withMessage("Amount must be at least ₹1"),
     body("currency").optional().trim().isIn(["INR"]),
     body("enabled").optional().isBoolean(),
+    body("coinConversion").optional().isObject(),
+    body("coinConversion.coins")
+        .optional()
+        .isFloat({ min: 1 })
+        .withMessage("coinConversion.coins must be at least 1"),
+    body("coinConversion.rupees")
+        .optional()
+        .isFloat({ gt: 0 })
+        .withMessage("coinConversion.rupees must be greater than 0"),
+    body("coins")
+        .optional()
+        .isFloat({ min: 1 })
+        .withMessage("coins must be at least 1"),
+    body("rupees")
+        .optional()
+        .isFloat({ gt: 0 })
+        .withMessage("rupees must be greater than 0"),
 ];
 
 exports.updateFirstTopupBonus = [

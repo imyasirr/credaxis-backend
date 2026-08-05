@@ -21,7 +21,7 @@ exports.getPaymentById = asyncHandler(async (req, res) => {
     return response.success(res, "Payment fetched", data);
 });
 
-exports.getCreditCheckFee = asyncHandler(async (_req, res) => {
-    const data = await creditCheckFeeService.getCreditCheckFeeSetting();
+exports.getCreditCheckFee = asyncHandler(async (req, res) => {
+    const data = await creditCheckFeeService.getCreditCheckQuote(req.user.id);
     return response.success(res, "Credit check fee fetched", data);
 });

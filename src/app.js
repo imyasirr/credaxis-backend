@@ -39,6 +39,13 @@ app.use(
     express.static(path.join(__dirname, "../public/uploads"))
 );
 
+// One-time move of credit PDFs saved to wrong src/public path
+try {
+    require("./middleware/upload.middleware").getUploadDir("credit-reports");
+} catch {
+    /* ignore */
+}
+
 app.use("/api", routes);
 
 // Games WebView SPA at /games/ (built with VITE_BASE_PATH=/games/)

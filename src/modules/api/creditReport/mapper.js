@@ -1,7 +1,21 @@
+const publicBaseUrl = () =>
+    String(process.env.PUBLIC_BASE_URL || process.env.APP_URL || "")
+        .trim()
+        .replace(/\/$/, "");
+
 exports.formatCreditReport = (doc, { includeRaw = false } = {}) => {
     if (!doc) return null;
 
     const data = doc.toObject ? doc.toObject() : doc;
+    const pdfPath = data.pdfPath || null;
+    const base = publicBaseUrl();
+    const pdfUrl = pdfPath
+        ? /^https?:\/\//i.test(pdfPath)
+            ? pdfPath
+            : base
+              ? `${base}${pdfPath.startsWith("/") ? "" : "/"}${pdfPath}`
+              : pdfPath
+        : null;
 
     const result = {
         id: data._id,
@@ -21,7 +35,9 @@ exports.formatCreditReport = (doc, { includeRaw = false } = {}) => {
         decentroTxnId: data.decentroTxnId || null,
         responseKey: data.responseKey || null,
         message: data.message || null,
-        pdfPath: data.pdfPath || null,
+        pdfPath,
+        /** Absolute URL when PUBLIC_BASE_URL / APP_URL is set; else same as pdfPath */
+        pdfUrl,
         errorCode: data.errorCode || null,
         errorMessage: data.errorMessage || null,
         createdAt: data.createdAt,

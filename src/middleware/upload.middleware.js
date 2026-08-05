@@ -15,6 +15,44 @@ const ensureDir = (folder) => {
     return uploadDir;
 };
 
+/**
+ * Older credit-report PDF writes used
+ * modules/api/creditReport/../../../public → src/public/uploads
+ * while express.static serves backend/public/uploads. Move files once.
+ */
+const migrateLegacyCreditReportUploads = () => {
+    try {
+        const resolvedLegacy = path.resolve(
+            __dirname,
+            "../public/uploads/credit-reports"
+        );
+        const targetDir = ensureDir("credit-reports");
+        if (
+            !fs.existsSync(resolvedLegacy) ||
+            resolvedLegacy === path.resolve(targetDir)
+        ) {
+            return;
+        }
+        for (const name of fs.readdirSync(resolvedLegacy)) {
+            const from = path.join(resolvedLegacy, name);
+            const to = path.join(targetDir, name);
+            if (!fs.statSync(from).isFile()) continue;
+            if (!fs.existsSync(to)) {
+                fs.renameSync(from, to);
+            }
+        }
+    } catch {
+        // best-effort
+    }
+};
+
+module.exports.getUploadDir = (folder) => {
+    if (folder === "credit-reports") {
+        migrateLegacyCreditReportUploads();
+    }
+    return ensureDir(folder);
+};
+
 const createUploader = ({ folder, fieldName, multiple = false, maxCount = 1 }) => {
     const uploadDir = ensureDir(folder);
 

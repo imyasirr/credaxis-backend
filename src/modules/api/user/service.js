@@ -312,15 +312,20 @@ exports.getDashboard = async (userId) => {
             unreadCount: notifications?.unreadCount || 0,
         },
         credit: latestCredit
-            ? {
-                  id: latestCredit._id,
-                  score: latestCredit.score,
-                  scoreName: latestCredit.scoreName || null,
-                  status: latestCredit.status,
-                  pan: latestCredit.pan || null,
-                  pdfPath: latestCredit.pdfPath || null,
-                  createdAt: latestCredit.createdAt,
-              }
+            ? (() => {
+                  const { formatCreditReport } = require("../creditReport/mapper");
+                  const c = formatCreditReport(latestCredit);
+                  return {
+                      id: c.id,
+                      score: c.score,
+                      scoreName: c.scoreName,
+                      status: c.status,
+                      pan: c.pan,
+                      pdfPath: c.pdfPath,
+                      pdfUrl: c.pdfUrl,
+                      createdAt: c.createdAt,
+                  };
+              })()
             : null,
         mandates: {
             total: mandateTotal,

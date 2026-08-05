@@ -66,14 +66,8 @@ const formatDateSafe = (date) => {
 };
 
 const ensureCreditReportDir = () => {
-    const dir = path.join(
-        __dirname,
-        "../../../public/uploads/credit-reports"
-    );
-    if (!fs.existsSync(dir)) {
-        fs.mkdirSync(dir, { recursive: true });
-    }
-    return dir;
+    const { getUploadDir } = require("../../../middleware/upload.middleware");
+    return getUploadDir("credit-reports");
 };
 
 /**
@@ -406,7 +400,7 @@ exports.fetchCreditReportSummary = async ({
         type: "SUCCESS",
     });
 
-    return formatCreditReport(record, { includeRaw: false });
+    return formatCreditReport(record, { includeRaw: true });
 };
 
 /**
@@ -568,7 +562,7 @@ exports.getMyLatestReport = async (userId) => {
     if (!report) {
         throw new ApiError(404, "No successful credit report found");
     }
-    return formatCreditReport(report, { includeRaw: false });
+    return formatCreditReport(report, { includeRaw: true });
 };
 
 exports.getReportById = async (userId, reportId, { asAdmin = false } = {}) => {
@@ -584,7 +578,8 @@ exports.getReportById = async (userId, reportId, { asAdmin = false } = {}) => {
     ) {
         throw new ApiError(403, "Access denied");
     }
-    return formatCreditReport(report, { includeRaw: asAdmin });
+    // User detail + admin detail both need Decentro raw for custom UI
+    return formatCreditReport(report, { includeRaw: true });
 };
 
 /**

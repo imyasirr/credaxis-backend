@@ -20,6 +20,13 @@ const paymentSchema = new mongoose.Schema(
             index: true,
         },
 
+        method: {
+            type: String,
+            enum: ["ONLINE", "WALLET", "COINS"],
+            default: "ONLINE",
+            index: true,
+        },
+
         amount: {
             type: Number,
             required: true,

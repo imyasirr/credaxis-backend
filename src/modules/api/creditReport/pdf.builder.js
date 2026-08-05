@@ -72,14 +72,8 @@ const pillColors = (tone) => {
 };
 
 const ensureDir = () => {
-    const dir = path.join(
-        __dirname,
-        "../../../public/uploads/credit-reports"
-    );
-    if (!fs.existsSync(dir)) {
-        fs.mkdirSync(dir, { recursive: true });
-    }
-    return dir;
+    const { getUploadDir } = require("../../../middleware/upload.middleware");
+    return getUploadDir("credit-reports");
 };
 
 const slugifyName = (name) => {

@@ -54,8 +54,8 @@ const buildCheckoutPayload = (payment, user = null) => ({
 });
 
 /**
- * Create Razorpay order + local Payment row.
- * Reusable for WALLET_TOPUP | CREDIT_CHECK (add more purposes later).
+ * Create payment for WALLET_TOPUP | CREDIT_CHECK.
+ * CREDIT_CHECK supports method: ONLINE | WALLET | COINS
  */
 exports.createPayment = async (userId, body = {}) => {
     const purpose = String(body.purpose || "").toUpperCase();
@@ -67,7 +67,165 @@ exports.createPayment = async (userId, body = {}) => {
         );
     }
 
-    const amount = await resolveAmount(purpose, body.amount);
+    if (purpose === PAYMENT_PURPOSES.CREDIT_CHECK) {
+        return createCreditCheckPayment(userId, body);
+    }
+
+    return createOnlinePayment(userId, purpose, body);
+};
+
+const createCreditCheckPayment = async (userId, body = {}) => {
+    const { CREDIT_CHECK_METHODS } = creditCheckFeeService;
+    const method = String(body.method || CREDIT_CHECK_METHODS.ONLINE)
+        .trim()
+        .toUpperCase();
+
+    if (!Object.values(CREDIT_CHECK_METHODS).includes(method)) {
+        throw new ApiError(
+            400,
+            `method must be one of: ${Object.values(CREDIT_CHECK_METHODS).join(", ")}`
+        );
+    }
+
+    const fee = await creditCheckFeeService.getCreditCheckFeeSetting();
+    if (!fee.enabled) {
+        throw new ApiError(400, "Credit check payments are currently disabled");
+    }
+
+    const amount = fee.amount;
+    const description =
+        String(body.description || "").trim() ||
+        PURPOSE_LABELS[PAYMENT_PURPOSES.CREDIT_CHECK];
+
+    const baseMeta =
+        body.meta && typeof body.meta === "object" ? { ...body.meta } : {};
+
+    if (method === CREDIT_CHECK_METHODS.ONLINE) {
+        return createOnlinePayment(userId, PAYMENT_PURPOSES.CREDIT_CHECK, {
+            ...body,
+            description,
+            meta: { ...baseMeta, method },
+            _method: method,
+            _amount: amount,
+        });
+    }
+
+    if (method === CREDIT_CHECK_METHODS.WALLET) {
+        const walletService = require("../wallet/service");
+        const payment = await Payment.create({
+            user: userId,
+            purpose: PAYMENT_PURPOSES.CREDIT_CHECK,
+            method,
+            amount,
+            currency: "INR",
+            status: PAYMENT_STATUSES.CREATED,
+            description,
+            meta: {
+                ...baseMeta,
+                method,
+                paidVia: "WALLET",
+            },
+        });
+
+        try {
+            const result = await walletService.debitMoney(userId, {
+                amount,
+                description: `Credit check — ${payment._id}`,
+                referenceId: String(payment._id),
+            });
+
+            payment.status = PAYMENT_STATUSES.PAID;
+            payment.paidAt = new Date();
+            payment.referenceType = "WALLET_TRANSACTION";
+            payment.referenceId = String(result.transaction?.id || "");
+            payment.meta = {
+                ...payment.meta,
+                walletTransactionId: String(result.transaction?.id || ""),
+            };
+            await payment.save();
+
+            return {
+                payment: formatPayment(payment),
+                method,
+                canFetch: true,
+                wallet: result.wallet,
+                transaction: result.transaction,
+                message:
+                    "Wallet payment successful. Use paymentId with credit-reports/fetch",
+            };
+        } catch (err) {
+            payment.status = PAYMENT_STATUSES.FAILED;
+            payment.failureReason = err.message || "Wallet debit failed";
+            await payment.save();
+            throw err;
+        }
+    }
+
+    // COINS
+    const coinService = require("../coins/service");
+    const coinsRequired = fee.coinsRequired;
+
+    const payment = await Payment.create({
+        user: userId,
+        purpose: PAYMENT_PURPOSES.CREDIT_CHECK,
+        method,
+        amount,
+        currency: "INR",
+        status: PAYMENT_STATUSES.CREATED,
+        description,
+        meta: {
+            ...baseMeta,
+            method,
+            paidVia: "COINS",
+            coinsRequired,
+            coinConversion: fee.coinConversion,
+            conversionLabel: fee.conversionLabel,
+        },
+    });
+
+    try {
+        const result = await coinService.debitCoins(userId, {
+            amount: coinsRequired,
+            description: `Credit check — ${payment._id}`,
+            referenceId: String(payment._id),
+            source: "OTHER",
+        });
+
+        payment.status = PAYMENT_STATUSES.PAID;
+        payment.paidAt = new Date();
+        payment.referenceType = "COIN_TRANSACTION";
+        payment.referenceId = String(result.transaction?.id || "");
+        payment.meta = {
+            ...payment.meta,
+            coinsDebited: coinsRequired,
+            coinTransactionId: String(result.transaction?.id || ""),
+        };
+        await payment.save();
+
+        return {
+            payment: formatPayment(payment),
+            method,
+            canFetch: true,
+            coins: result.wallet,
+            transaction: result.transaction,
+            coinsDebited: coinsRequired,
+            message:
+                "Coin payment successful. Use paymentId with credit-reports/fetch",
+        };
+    } catch (err) {
+        payment.status = PAYMENT_STATUSES.FAILED;
+        payment.failureReason = err.message || "Coin debit failed";
+        await payment.save();
+        throw err;
+    }
+};
+
+const createOnlinePayment = async (userId, purpose, body = {}) => {
+    const amount =
+        body._amount !== undefined
+            ? body._amount
+            : await resolveAmount(purpose, body.amount);
+    const method = body._method || "ONLINE";
     const description =
         String(body.description || "").trim() ||
         PURPOSE_LABELS[purpose] ||
@@ -76,6 +234,7 @@ exports.createPayment = async (userId, body = {}) => {
     const payment = await Payment.create({
         user: userId,
         purpose,
+        method,
         amount,
         currency: "INR",
         status: PAYMENT_STATUSES.CREATED,
@@ -94,6 +253,7 @@ exports.createPayment = async (userId, body = {}) => {
                 paymentId: String(payment._id),
                 purpose,
                 userId: String(userId),
+                method,
             },
         });
 
@@ -112,6 +272,7 @@ exports.createPayment = async (userId, body = {}) => {
 
     return {
         payment: formatPayment(payment),
+        method,
         razorpay: buildCheckoutPayload(payment, user),
     };
 };
@@ -257,7 +418,7 @@ exports.consumeCreditCheckPayment = async (userId, paymentId) => {
     if (payment.status !== PAYMENT_STATUSES.PAID) {
         throw new ApiError(
             400,
-            "Payment not verified yet. Complete Razorpay payment first"
+            "Payment not verified yet. Complete payment first"
         );
     }
 

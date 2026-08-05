@@ -9,6 +9,12 @@ exports.createPayment = [
         .withMessage(
             `purpose must be one of: ${Object.values(PAYMENT_PURPOSES).join(", ")}`
         ),
+    body("method")
+        .optional()
+        .trim()
+        .toUpperCase()
+        .isIn(["ONLINE", "WALLET", "COINS"])
+        .withMessage("method must be one of: ONLINE, WALLET, COINS"),
     body("amount")
         .optional()
         .isFloat({ min: 1 })
