@@ -1,4 +1,5 @@
 const adminService = require("./service");
+const deletionService = require("../../api/user/deletion.service");
 
 const asyncHandler = require("../../../utils/asyncHandler");
 const response = require("../../../utils/response");
@@ -42,6 +43,34 @@ exports.updateUser = asyncHandler(async (req, res) => {
 exports.deleteUser = asyncHandler(async (req, res) => {
     const data = await adminService.deleteUser(req.params.id);
     return response.success(res, "User deleted successfully", data);
+});
+
+exports.listDeletionRequests = asyncHandler(async (req, res) => {
+    const data = await deletionService.listDeletionRequests(req.query);
+    return response.success(res, "Deletion requests fetched", data);
+});
+
+exports.getDeletionRequestById = asyncHandler(async (req, res) => {
+    const data = await deletionService.getDeletionRequestById(req.params.id);
+    return response.success(res, "Deletion request fetched", data);
+});
+
+exports.approveDeletionRequest = asyncHandler(async (req, res) => {
+    const data = await deletionService.approveDeletionRequest(
+        req.params.id,
+        req.user.id,
+        req.body
+    );
+    return response.success(res, "Deletion request approved", data);
+});
+
+exports.rejectDeletionRequest = asyncHandler(async (req, res) => {
+    const data = await deletionService.rejectDeletionRequest(
+        req.params.id,
+        req.user.id,
+        req.body
+    );
+    return response.success(res, "Deletion request rejected", data);
 });
 
 exports.getMe = asyncHandler(async (req, res) => {

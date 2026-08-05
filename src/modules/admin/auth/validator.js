@@ -1,4 +1,4 @@
-const { body } = require("express-validator");
+const { body, query, param } = require("express-validator");
 
 exports.login = [
     body("email").isEmail().withMessage("Valid email is required"),
@@ -106,4 +106,44 @@ exports.updateUser = [
         .trim()
         .isLength({ min: 6, max: 6 })
         .withMessage("Pincode must be 6 digits"),
+];
+
+exports.listDeletionRequests = [
+    query("page").optional().isInt({ min: 1 }),
+    query("limit").optional().isInt({ min: 1, max: 100 }),
+    query("status")
+        .optional()
+        .trim()
+        .toUpperCase()
+        .isIn(["PENDING", "APPROVED", "REJECTED", "CANCELLED"])
+        .withMessage("Invalid status"),
+    query("search").optional().trim().isLength({ max: 100 }),
+];
+
+exports.deletionRequestId = [
+    param("id").isMongoId().withMessage("Valid request id is required"),
+];
+
+exports.approveDeletionRequest = [
+    param("id").isMongoId().withMessage("Valid request id is required"),
+    body("remarks")
+        .optional({ values: "falsy" })
+        .trim()
+        .isLength({ max: 500 })
+        .withMessage("remarks must be at most 500 characters"),
+    body("adminRemarks")
+        .optional({ values: "falsy" })
+        .trim()
+        .isLength({ max: 500 })
+        .withMessage("adminRemarks must be at most 500 characters"),
+];
+
+exports.rejectDeletionRequest = [
+    param("id").isMongoId().withMessage("Valid request id is required"),
+    body("remarks")
+        .trim()
+        .notEmpty()
+        .withMessage("remarks is required when rejecting")
+        .isLength({ max: 500 })
+        .withMessage("remarks must be at most 500 characters"),
 ];

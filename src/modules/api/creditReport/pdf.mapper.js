@@ -709,7 +709,53 @@ exports.mapCreditReportForPdf = (raw, meta = {}) => {
     };
 
     model.overviewText = buildSummaryText(model);
+    model.scoreOutlook = buildScoreOutlook(model);
     return model;
+};
+
+/**
+ * Illustrative CredAxis outlook from utilization / payments — NOT a bureau forecast.
+ */
+const buildScoreOutlook = (model) => {
+    const current = Number(model.score?.value);
+    if (!Number.isFinite(current) || current < 0) return null;
+
+    const util = Number(model.utilization?.usedPct);
+    const missed = Number(model.paymentSummary?.missedPayments) || 0;
+    const onTime = Number(model.paymentSummary?.onTimePct);
+
+    let delta = 10;
+    if (Number.isFinite(util)) {
+        if (util > 70) delta = 36;
+        else if (util > 50) delta = 28;
+        else if (util > 30) delta = 20;
+        else if (util > 15) delta = 14;
+        else delta = 8;
+    }
+    if (missed > 0) delta = Math.max(4, delta - 12);
+    if (Number.isFinite(onTime) && onTime < 90) delta = Math.max(4, delta - 8);
+    if (current >= 850) delta = Math.min(delta, 5);
+    else if (current >= 800) delta = Math.min(delta, 12);
+    else if (current >= 750) delta = Math.min(delta, 22);
+
+    const projected = Math.min(900, Math.round(current + delta));
+    const gain = projected - current;
+
+    let tip = "Keep paying on time and avoid new hard enquiries.";
+    if (Number.isFinite(util) && util > 30) {
+        tip = "Lower credit utilization under 30% for the biggest potential lift.";
+    } else if (missed > 0) {
+        tip = "Clear past-dues first — that usually helps more than anything else.";
+    }
+
+    return {
+        current,
+        projected,
+        delta: gain,
+        tip,
+        disclaimer:
+            "Illustrative CredAxis outlook only — not an Equifax / bureau prediction.",
+    };
 };
 
 exports.scoreBand = scoreBand;

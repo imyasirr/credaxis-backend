@@ -505,20 +505,186 @@ const drawAccounts = (doc, model) => {
     doc.y = y + 10;
 };
 
+const drawScoreTrendChart = (doc, model, x, y, w, h) => {
+    drawCard(doc, x, y, w, h);
+
+    doc.font("Helvetica-Bold")
+        .fontSize(9)
+        .fillColor(COLORS.ink)
+        .text("Score trend & outlook", x + 12, y + 10, { lineBreak: false });
+
+    const outlook = model.scoreOutlook;
+    const history = [...(model.previousReports || [])]
+        .filter((r) => r && r.score != null)
+        .reverse() // oldest → newest
+        .slice(-4)
+        .map((r) => ({
+            label: String(r.date || "")
+                .replace(/,\s*\d{4}$/, "")
+                .replace(/\s+\d{4}$/, "")
+                .slice(0, 8),
+            value: Number(r.score),
+            kind: "past",
+        }));
+
+    const current = Number(model.score?.value);
+    if (Number.isFinite(current)) {
+        // Avoid duplicating latest previous if same score on same day
+        const last = history[history.length - 1];
+        if (!last || last.value !== current) {
+            history.push({ label: "Now", value: current, kind: "current" });
+        } else {
+            history[history.length - 1] = {
+                ...last,
+                label: "Now",
+                kind: "current",
+            };
+        }
+    }
+
+    if (outlook && outlook.projected != null) {
+        history.push({
+            label: "Next*",
+            value: outlook.projected,
+            kind: "forecast",
+        });
+    }
+
+    if (history.length < 1) {
+        doc.font("Helvetica")
+            .fontSize(7.5)
+            .fillColor(COLORS.muted)
+            .text("Not enough score history for a chart yet.", x + 12, y + 40, {
+                width: w - 24,
+                lineBreak: false,
+            });
+        return;
+    }
+
+    const plotX = x + 28;
+    const plotY = y + 28;
+    const plotW = w - 40;
+    const plotH = h - 72;
+
+    const values = history.map((p) => p.value);
+    let minV = Math.min(...values, 300);
+    let maxV = Math.max(...values, 600);
+    minV = Math.max(300, Math.floor(minV / 50) * 50 - 50);
+    maxV = Math.min(900, Math.ceil(maxV / 50) * 50 + 50);
+    if (maxV <= minV) maxV = minV + 100;
+
+    const toX = (i) =>
+        plotX +
+        (history.length === 1 ? plotW / 2 : (i / (history.length - 1)) * plotW);
+    const toY = (v) =>
+        plotY + plotH - ((v - minV) / (maxV - minV)) * plotH;
+
+    // grid
+    doc.save();
+    for (let g = 0; g < 4; g += 1) {
+        const gy = plotY + (plotH * g) / 3;
+        doc.moveTo(plotX, gy)
+            .lineTo(plotX + plotW, gy)
+            .strokeColor(COLORS.line)
+            .lineWidth(0.4)
+            .stroke();
+    }
+    doc.restore();
+
+    // solid line for actual points (exclude forecast)
+    const actualCount = history.filter((p) => p.kind !== "forecast").length;
+    if (actualCount >= 2) {
+        doc.save();
+        doc.lineWidth(1.6).strokeColor(COLORS.brand).lineCap("round");
+        doc.moveTo(toX(0), toY(history[0].value));
+        for (let i = 1; i < actualCount; i += 1) {
+            doc.lineTo(toX(i), toY(history[i].value));
+        }
+        doc.stroke();
+        doc.restore();
+    }
+
+    // dashed forecast segment
+    const forecastIdx = history.findIndex((p) => p.kind === "forecast");
+    if (forecastIdx > 0) {
+        const a = forecastIdx - 1;
+        doc.save();
+        doc.lineWidth(1.4)
+            .strokeColor(COLORS.brand)
+            .dash(3, { space: 2 })
+            .moveTo(toX(a), toY(history[a].value))
+            .lineTo(toX(forecastIdx), toY(history[forecastIdx].value))
+            .stroke();
+        doc.undash();
+        doc.restore();
+    }
+
+    // points + labels
+    history.forEach((p, i) => {
+        const cx = toX(i);
+        const cy = toY(p.value);
+        const isForecast = p.kind === "forecast";
+        doc.save();
+        if (isForecast) {
+            doc.circle(cx, cy, 3.5).strokeColor(COLORS.brand).lineWidth(1.2).stroke();
+            doc.circle(cx, cy, 1.5).fill(COLORS.brand);
+        } else if (p.kind === "current") {
+            doc.circle(cx, cy, 4).fill(COLORS.brand);
+        } else {
+            doc.circle(cx, cy, 3).fill(COLORS.navy);
+        }
+        doc.restore();
+
+        doc.font("Helvetica-Bold")
+            .fontSize(7)
+            .fillColor(isForecast ? COLORS.brand : COLORS.ink)
+            .text(String(p.value), cx - 14, cy - 14, {
+                width: 28,
+                align: "center",
+                lineBreak: false,
+            });
+        doc.font("Helvetica")
+            .fontSize(6)
+            .fillColor(COLORS.softMuted)
+            .text(p.label || "", cx - 18, plotY + plotH + 4, {
+                width: 36,
+                align: "center",
+                lineBreak: false,
+            });
+    });
+
+    if (outlook) {
+        const gain =
+            outlook.delta > 0 ? `+${outlook.delta}` : String(outlook.delta);
+        doc.font("Helvetica-Bold")
+            .fontSize(7.5)
+            .fillColor(COLORS.brand)
+            .text(
+                `Possible next: ${outlook.projected} (${gain})`,
+                x + 12,
+                y + h - 28,
+                { width: w - 24, lineBreak: false }
+            );
+        doc.font("Helvetica")
+            .fontSize(6)
+            .fillColor(COLORS.softMuted)
+            .text(outlook.disclaimer, x + 12, y + h - 16, {
+                width: w - 24,
+                ellipsis: true,
+                lineBreak: false,
+            });
+    }
+};
+
 const drawEnquiriesAndPrevious = (doc, model) => {
-    ensureSpace(doc, 120);
+    ensureSpace(doc, 150);
     const y = doc.y;
-    const leftW = (CONTENT_W - GAP) * 0.58;
+    const leftW = (CONTENT_W - GAP) * 0.42;
     const rightW = CONTENT_W - GAP - leftW;
     const enquiries = (model.enquiries || []).slice(0, 4);
-    const previous = (model.previousReports || []).slice(0, 4);
-    const h = Math.max(
-        88,
-        36 + Math.max(enquiries.length, previous.length, 1) * 22
-    );
+    const h = 148;
 
     drawCard(doc, MARGIN, y, leftW, h);
-    drawCard(doc, MARGIN + leftW + GAP, y, rightW, h);
 
     doc.font("Helvetica-Bold")
         .fontSize(9)
@@ -529,12 +695,12 @@ const drawEnquiriesAndPrevious = (doc, model) => {
         doc.font("Helvetica")
             .fontSize(7.5)
             .fillColor(COLORS.muted)
-            .text("No recent enquiries.", MARGIN + 12, y + 36, {
+            .text("No recent enquiries.", MARGIN + 12, y + 40, {
                 lineBreak: false,
             });
     } else {
         enquiries.forEach((e, i) => {
-            const ry = y + 30 + i * 22;
+            const ry = y + 30 + i * 26;
             doc.font("Helvetica-Bold")
                 .fontSize(7)
                 .fillColor(COLORS.ink)
@@ -546,11 +712,16 @@ const drawEnquiriesAndPrevious = (doc, model) => {
             doc.font("Helvetica")
                 .fontSize(6.5)
                 .fillColor(COLORS.muted)
-                .text(`${e.purpose || "—"} · ${e.date || "—"}`, MARGIN + 12, ry + 10, {
-                    width: leftW - 70,
-                    ellipsis: true,
-                    lineBreak: false,
-                });
+                .text(
+                    `${e.purpose || "—"} · ${e.date || "—"}`,
+                    MARGIN + 12,
+                    ry + 10,
+                    {
+                        width: leftW - 70,
+                        ellipsis: true,
+                        lineBreak: false,
+                    }
+                );
             drawPill(
                 doc,
                 MARGIN + leftW - 48,
@@ -561,36 +732,7 @@ const drawEnquiriesAndPrevious = (doc, model) => {
         });
     }
 
-    const rx = MARGIN + leftW + GAP + 12;
-    doc.font("Helvetica-Bold")
-        .fontSize(9)
-        .fillColor(COLORS.ink)
-        .text("Previous scores", rx, y + 10, { lineBreak: false });
-
-    if (!previous.length) {
-        doc.font("Helvetica")
-            .fontSize(7.5)
-            .fillColor(COLORS.muted)
-            .text("No previous CredAxis pulls.", rx, y + 36, {
-                width: rightW - 24,
-                lineBreak: false,
-            });
-    } else {
-        previous.forEach((r, i) => {
-            const ry = y + 34 + i * 20;
-            doc.font("Helvetica-Bold")
-                .fontSize(10)
-                .fillColor(COLORS.brand)
-                .text(String(r.score ?? "—"), rx, ry, { lineBreak: false });
-            doc.font("Helvetica")
-                .fontSize(7)
-                .fillColor(COLORS.muted)
-                .text(r.date || "", rx + 40, ry + 2, {
-                    width: rightW - 60,
-                    lineBreak: false,
-                });
-        });
-    }
+    drawScoreTrendChart(doc, model, MARGIN + leftW + GAP, y, rightW, h);
 
     doc.y = y + h + 12;
 };

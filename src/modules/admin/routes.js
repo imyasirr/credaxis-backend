@@ -89,6 +89,31 @@ router.patch(
 );
 router.delete("/users/:id", adminController.deleteUser);
 
+router.get(
+    "/deletion-requests",
+    adminValidator.listDeletionRequests,
+    validate,
+    adminController.listDeletionRequests
+);
+router.get(
+    "/deletion-requests/:id",
+    adminValidator.deletionRequestId,
+    validate,
+    adminController.getDeletionRequestById
+);
+router.post(
+    "/deletion-requests/:id/approve",
+    adminValidator.approveDeletionRequest,
+    validate,
+    adminController.approveDeletionRequest
+);
+router.post(
+    "/deletion-requests/:id/reject",
+    adminValidator.rejectDeletionRequest,
+    validate,
+    adminController.rejectDeletionRequest
+);
+
 router.get("/wallets", adminWalletController.getWallets);
 router.get("/wallets/:id", adminWalletController.getWalletById);
 router.post(

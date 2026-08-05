@@ -64,4 +64,23 @@ router.get(
     controller.getMyReferrals
 );
 
+/** Account deletion request (soft-delete after admin approval) */
+router.post(
+    "/deletion-request",
+    requireAction(ACTIONS.PROFILE_WRITE),
+    validator.requestDeletion,
+    validate,
+    controller.requestDeletion
+);
+router.get(
+    "/deletion-request",
+    requireAction(ACTIONS.PROFILE_READ),
+    controller.getMyDeletionRequest
+);
+router.delete(
+    "/deletion-request",
+    requireAction(ACTIONS.PROFILE_WRITE),
+    controller.cancelDeletionRequest
+);
+
 module.exports = router;

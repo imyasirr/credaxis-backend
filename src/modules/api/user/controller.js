@@ -1,4 +1,5 @@
 const service = require("./service");
+const deletionService = require("./deletion.service");
 const asyncHandler = require("../../../utils/asyncHandler");
 const response = require("../../../utils/response");
 
@@ -52,4 +53,24 @@ exports.getMyReferrals = asyncHandler(async (req, res) => {
         req.user.role
     );
     return response.success(res, "Referrals fetched", data);
+});
+
+exports.requestDeletion = asyncHandler(async (req, res) => {
+    const data = await deletionService.requestDeletion(req.user.id, req.body);
+    return response.success(
+        res,
+        "Account deletion request submitted",
+        data,
+        201
+    );
+});
+
+exports.getMyDeletionRequest = asyncHandler(async (req, res) => {
+    const data = await deletionService.getMyDeletionRequest(req.user.id);
+    return response.success(res, "Deletion request fetched", data);
+});
+
+exports.cancelDeletionRequest = asyncHandler(async (req, res) => {
+    const data = await deletionService.cancelDeletionRequest(req.user.id);
+    return response.success(res, "Deletion request cancelled", data);
 });

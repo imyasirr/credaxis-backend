@@ -62,3 +62,11 @@ exports.getReferrals = [
         .isIn(["USER", "PARTNER"])
         .withMessage("source must be USER or PARTNER"),
 ];
+
+exports.requestDeletion = [
+    body("reason")
+        .optional()
+        .trim()
+        .isLength({ max: 500 })
+        .withMessage("reason must be at most 500 characters"),
+];

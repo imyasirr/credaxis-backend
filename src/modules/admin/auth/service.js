@@ -540,34 +540,8 @@ exports.getRoles = async () => {
 };
 
 exports.deleteUser = async (userId) => {
-    const user = await User.findOne({ _id: userId, isDeleted: false });
-
-    if (!user) {
-        throw new ApiError(404, "User not found");
-    }
-
-    const adminRole = await Role.findOne({ name: ROLES.ADMIN });
-
-    if (user.role.toString() === adminRole._id.toString()) {
-        throw new ApiError(400, "Cannot delete admin account");
-    }
-
-    const originalMobile = user.mobile;
-
-    user.isDeleted = true;
-    user.deletedAt = new Date();
-    user.status = "INACTIVE";
-
-    // Free unique mobile/email so the same number can register again
-    const prefix = `deleted_${user._id}_`;
-    user.mobile = prefix + originalMobile;
-    if (user.email) {
-        user.email = prefix + user.email;
-    }
-
-    await user.save();
-
-    return { id: user._id, mobile: originalMobile };
+    const deletionService = require("../../api/user/deletion.service");
+    return deletionService.softDeleteUserAccount(userId);
 };
 
 exports.getMe = async (userId) => {
