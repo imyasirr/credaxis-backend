@@ -12,33 +12,32 @@ const COLORS = {
     line: "#E2E8F0",
     soft: "#F8FAFC",
     card: "#FFFFFF",
-    blue: "#2563EB",
-    blueSoft: "#EFF6FF",
-    blueMid: "#DBEAFE",
+    brand: "#0F766E",
+    brandSoft: "#F0FDFA",
+    brandMid: "#99F6E4",
     navy: "#0B1F3A",
     white: "#FFFFFF",
     danger: "#DC2626",
     warn: "#D97706",
-    ok: "#2563EB",
+    ok: "#0F766E",
     good: "#0D9488",
     excellent: "#059669",
     pillGreenBg: "#DCFCE7",
     pillGreenText: "#166534",
-    pillBlueBg: "#DBEAFE",
-    pillBlueText: "#1D4ED8",
+    pillTealBg: "#CCFBF1",
+    pillTealText: "#0F766E",
     pillAmberBg: "#FEF3C7",
     pillAmberText: "#B45309",
     pillRedBg: "#FEE2E2",
     pillRedText: "#B91C1C",
-    tipBg: "#EFF6FF",
 };
 
-const MARGIN = 36;
+const MARGIN = 40;
 const PAGE_W = 595.28;
 const PAGE_H = 841.89;
 const CONTENT_W = PAGE_W - MARGIN * 2;
 const GAP = 10;
-const FOOTER_H = 40;
+const FOOTER_ZONE = 36;
 
 const toneColor = (tone) => {
     switch (tone) {
@@ -46,14 +45,12 @@ const toneColor = (tone) => {
             return COLORS.danger;
         case "warn":
             return COLORS.warn;
-        case "ok":
-            return COLORS.ok;
-        case "good":
-            return COLORS.good;
         case "excellent":
             return COLORS.excellent;
+        case "good":
+            return COLORS.good;
         default:
-            return COLORS.muted;
+            return COLORS.ok;
     }
 };
 
@@ -67,7 +64,7 @@ const pillColors = (tone) => {
         case "good":
             return { bg: COLORS.pillGreenBg, fg: COLORS.pillGreenText };
         default:
-            return { bg: COLORS.pillBlueBg, fg: COLORS.pillBlueText };
+            return { bg: COLORS.pillTealBg, fg: COLORS.pillTealText };
     }
 };
 
@@ -112,19 +109,19 @@ const formatDateTime = (date) => {
     }
 };
 
-const ensureSpace = (doc, needed = 80) => {
-    if (doc.y + needed > PAGE_H - FOOTER_H - 8) {
+const pageBottom = () => PAGE_H - FOOTER_ZONE;
+
+const ensureSpace = (doc, needed = 60) => {
+    if (doc.y + needed > pageBottom() - 4) {
         doc.addPage();
         doc.y = MARGIN;
     }
 };
 
 const drawCard = (doc, x, y, w, h, options = {}) => {
-    const fill = options.fill || COLORS.card;
-    const radius = options.radius ?? 10;
     doc.save();
-    doc.roundedRect(x, y, w, h, radius)
-        .fillAndStroke(fill, options.stroke || COLORS.line);
+    doc.roundedRect(x, y, w, h, options.radius ?? 8)
+        .fillAndStroke(options.fill || COLORS.card, options.stroke || COLORS.line);
     doc.restore();
 };
 
@@ -132,10 +129,9 @@ const drawPill = (doc, x, y, text, tone = "ok") => {
     const label = String(text || "—");
     const { bg, fg } = pillColors(tone);
     doc.font("Helvetica-Bold").fontSize(7);
-    const tw = doc.widthOfString(label) + 12;
-    const th = 13;
+    const tw = Math.min(doc.widthOfString(label) + 12, 72);
     doc.save();
-    doc.roundedRect(x, y, tw, th, 6).fill(bg);
+    doc.roundedRect(x, y, tw, 13, 6).fill(bg);
     doc.fillColor(fg).text(label, x, y + 3, {
         width: tw,
         align: "center",
@@ -148,178 +144,109 @@ const drawPill = (doc, x, y, text, tone = "ok") => {
 const drawProgressBar = (doc, x, y, w, pct, tone) => {
     const p = Math.min(100, Math.max(0, Number(pct) || 0));
     doc.save();
-    doc.roundedRect(x, y, w, 6, 3).fill(COLORS.blueMid);
+    doc.roundedRect(x, y, w, 5, 2.5).fill(COLORS.brandMid);
     if (p > 0) {
-        doc.roundedRect(x, y, Math.max(4, (w * p) / 100), 6, 3).fill(
+        doc.roundedRect(x, y, Math.max(3, (w * p) / 100), 5, 2.5).fill(
             toneColor(tone)
         );
     }
     doc.restore();
 };
 
-const drawSemiGauge = (doc, cx, cy, radius, score, tone) => {
-    const min = 300;
-    const max = 900;
-    const value =
-        score == null || score < 0
-            ? min
-            : Math.min(max, Math.max(min, Number(score)));
-    const pct = (value - min) / (max - min);
-
-    const start = Math.PI;
-    const end = 0;
-    const valueAngle = start + (end - start) * pct;
-
-    const drawArc = (from, to, color, width) => {
-        doc.save();
-        doc.lineWidth(width)
-            .strokeColor(color)
-            .lineCap("round");
-        doc.path(
-            `M ${cx + radius * Math.cos(from)} ${
-                cy + radius * Math.sin(from)
-            } A ${radius} ${radius} 0 0 1 ${cx + radius * Math.cos(to)} ${
-                cy + radius * Math.sin(to)
-            }`
-        ).stroke();
-        doc.restore();
-    };
-
-    drawArc(start, end, COLORS.blueMid, 12);
-    if (pct > 0.01) {
-        drawArc(start, valueAngle, toneColor(tone), 12);
-    }
-};
-
-const drawDonut = (doc, cx, cy, radius, usedPct, tone) => {
-    const pct = Math.min(100, Math.max(0, Number(usedPct) || 0)) / 100;
-    const start = -Math.PI / 2;
-    const usedEnd = start + Math.PI * 2 * pct;
-
-    const ring = (from, to, color, width) => {
-        if (to <= from) return;
-        doc.save();
-        doc.lineWidth(width).strokeColor(color).lineCap("butt");
-        const large = to - from > Math.PI ? 1 : 0;
-        doc.path(
-            `M ${cx + radius * Math.cos(from)} ${
-                cy + radius * Math.sin(from)
-            } A ${radius} ${radius} 0 ${large} 1 ${
-                cx + radius * Math.cos(to)
-            } ${cy + radius * Math.sin(to)}`
-        ).stroke();
-        doc.restore();
-    };
-
-    ring(start, start + Math.PI * 2, COLORS.blueMid, 14);
-    if (pct > 0) {
-        ring(start, usedEnd, toneColor(tone), 14);
-    }
+const textSafe = (doc, str, x, y, opts = {}) => {
+    doc.text(String(str ?? "—"), x, y, {
+        lineBreak: false,
+        ...opts,
+    });
 };
 
 const drawHeader = (doc, model) => {
-    const y = MARGIN;
-    doc.font("Helvetica-Bold")
-        .fontSize(14)
-        .fillColor(COLORS.blue)
-        .text(model.meta.brand || "MyCredAxis", MARGIN, y);
+    // Top brand bar
+    doc.save();
+    doc.rect(0, 0, PAGE_W, 52).fill(COLORS.navy);
+    doc.restore();
 
+    doc.font("Helvetica-Bold")
+        .fontSize(13)
+        .fillColor(COLORS.white)
+        .text(model.meta.brand || "MyCredAxis", MARGIN, 14, {
+            lineBreak: false,
+        });
     doc.font("Helvetica")
         .fontSize(8)
-        .fillColor(COLORS.muted)
-        .text(`Report Date`, PAGE_W - MARGIN - 160, y, {
-            width: 160,
-            align: "right",
-        });
-    doc.font("Helvetica-Bold")
-        .fontSize(9)
-        .fillColor(COLORS.ink)
-        .text(formatDate(model.meta.generatedAt), PAGE_W - MARGIN - 160, y + 11, {
-            width: 160,
-            align: "right",
-        });
+        .fillColor("#94A3B8")
+        .text("Equifax credit report", MARGIN, 30, { lineBreak: false });
+
     doc.font("Helvetica")
         .fontSize(7.5)
-        .fillColor(COLORS.softMuted)
-        .text(`Report ID: ${model.meta.referenceId}`, PAGE_W - MARGIN - 160, y + 24, {
-            width: 160,
+        .fillColor("#CBD5E1")
+        .text(`Report date  ${formatDate(model.meta.generatedAt)}`, MARGIN, 14, {
+            width: CONTENT_W,
             align: "right",
+            lineBreak: false,
+        });
+    doc.font("Helvetica")
+        .fontSize(7)
+        .fillColor("#94A3B8")
+        .text(`ID  ${model.meta.referenceId}`, MARGIN, 28, {
+            width: CONTENT_W,
+            align: "right",
+            lineBreak: false,
         });
 
-    doc.y = y + 44;
-    doc.font("Times-Bold")
-        .fontSize(26)
+    doc.y = 68;
+    doc.font("Helvetica-Bold")
+        .fontSize(18)
         .fillColor(COLORS.ink)
-        .text("CREDIT REPORT", MARGIN, doc.y, { width: CONTENT_W });
+        .text("Credit Report", MARGIN, doc.y, { lineBreak: false });
+    doc.y += 22;
 
-    doc.font("Helvetica")
-        .fontSize(9)
-        .fillColor(COLORS.muted)
-        .text(
-            "Comprehensive overview of your credit profile and history.",
-            MARGIN,
-            doc.y + 2,
-            { width: CONTENT_W }
-        );
-
-    doc.y += 18;
-    const cardY = doc.y;
-    const cardH = 42;
-    drawCard(doc, MARGIN, cardY, CONTENT_W, cardH, {
-        fill: COLORS.blueSoft,
-        stroke: COLORS.blueMid,
+    // Identity strip
+    const idY = doc.y;
+    const idH = 48;
+    drawCard(doc, MARGIN, idY, CONTENT_W, idH, {
+        fill: COLORS.brandSoft,
+        stroke: COLORS.brandMid,
     });
-
-    const colW = CONTENT_W / 3;
-    const rows = [
+    const cols = [
         { label: "NAME", value: model.personal.fullName },
         { label: "DATE OF BIRTH", value: model.personal.dateOfBirth },
         { label: "PAN", value: model.personal.pan },
     ];
-    rows.forEach((row, i) => {
-        const x = MARGIN + 12 + i * colW;
+    const colW = CONTENT_W / 3;
+    cols.forEach((c, i) => {
+        const x = MARGIN + 14 + i * colW;
         doc.font("Helvetica")
-            .fontSize(7)
-            .fillColor(COLORS.blue)
-            .text(row.label, x, cardY + 9, { width: colW - 16 });
+            .fontSize(6.5)
+            .fillColor(COLORS.brand)
+            .text(c.label, x, idY + 11, { lineBreak: false });
         doc.font("Helvetica-Bold")
             .fontSize(9)
             .fillColor(COLORS.ink)
-            .text(String(row.value || "—"), x, cardY + 21, {
-                width: colW - 16,
+            .text(String(c.value || "—"), x, idY + 24, {
+                width: colW - 22,
                 ellipsis: true,
                 lineBreak: false,
             });
     });
-
-    doc.y = cardY + cardH + 14;
+    doc.y = idY + idH + 14;
 };
 
-const drawScoreAndFactors = (doc, model) => {
-    ensureSpace(doc, 175);
+const drawScoreRow = (doc, model) => {
+    ensureSpace(doc, 150);
     const y = doc.y;
-    const leftW = (CONTENT_W - GAP) * 0.48;
+    const leftW = Math.floor(CONTENT_W * 0.38);
     const rightW = CONTENT_W - GAP - leftW;
-    const h = 168;
+    const h = 142;
 
     drawCard(doc, MARGIN, y, leftW, h);
     drawCard(doc, MARGIN + leftW + GAP, y, rightW, h);
 
-    doc.font("Helvetica-Bold")
-        .fontSize(10)
-        .fillColor(COLORS.ink)
-        .text("Credit Score Overview", MARGIN + 12, y + 12);
-
-    const cx = MARGIN + leftW / 2;
-    const cy = y + 88;
-    drawSemiGauge(
-        doc,
-        cx,
-        cy,
-        52,
-        model.score.value,
-        model.score.bandTone
-    );
+    // Score
+    doc.font("Helvetica")
+        .fontSize(7.5)
+        .fillColor(COLORS.muted)
+        .text("CREDIT SCORE", MARGIN + 14, y + 12, { lineBreak: false });
 
     const scoreText =
         model.score.value == null || model.score.value < 0
@@ -327,227 +254,67 @@ const drawScoreAndFactors = (doc, model) => {
             : String(model.score.value);
 
     doc.font("Helvetica-Bold")
-        .fontSize(26)
+        .fontSize(40)
         .fillColor(COLORS.ink)
-        .text(scoreText, MARGIN + 12, y + 72, {
-            width: leftW - 24,
+        .text(scoreText, MARGIN + 14, y + 34, {
+            width: leftW - 28,
             align: "center",
+            lineBreak: false,
         });
-    doc.font("Helvetica-Bold")
-        .fontSize(9)
-        .fillColor(toneColor(model.score.bandTone))
-        .text(model.score.bandLabel, MARGIN + 12, y + 100, {
-            width: leftW - 24,
-            align: "center",
-        });
+
+    drawPill(
+        doc,
+        MARGIN + (leftW - 70) / 2,
+        y + 86,
+        model.score.bandLabel || "—",
+        model.score.bandTone
+    );
+
     doc.font("Helvetica")
         .fontSize(7)
         .fillColor(COLORS.softMuted)
-        .text("Score range 300 – 900", MARGIN + 12, y + 114, {
-            width: leftW - 24,
+        .text("Range 300 – 900 · Equifax", MARGIN + 14, y + 112, {
+            width: leftW - 28,
             align: "center",
+            lineBreak: false,
         });
 
-    doc.roundedRect(MARGIN + 18, y + 132, leftW - 36, 22, 6).fill(
-        COLORS.blueSoft
-    );
+    // Utilization + tip
+    const u = model.utilization || {};
+    const ux = MARGIN + leftW + GAP + 14;
     doc.font("Helvetica")
         .fontSize(7.5)
-        .fillColor(COLORS.blue)
-        .text(
-            `${model.score.name} · Equifax via CredAxis`,
-            MARGIN + 18,
-            y + 139,
-            { width: leftW - 36, align: "center" }
-        );
+        .fillColor(COLORS.muted)
+        .text("CREDIT UTILIZATION", ux, y + 12, { lineBreak: false });
 
-    // Factors
-    const fx = MARGIN + leftW + GAP + 12;
     doc.font("Helvetica-Bold")
-        .fontSize(10)
-        .fillColor(COLORS.ink)
-        .text("Score Factors Summary", fx, y + 12);
+        .fontSize(28)
+        .fillColor(toneColor(u.tipTone))
+        .text(`${u.usedPct ?? "—"}%`, ux, y + 28, { lineBreak: false });
 
-    const factors = (model.score.factors || []).slice(0, 4);
-    factors.forEach((f, i) => {
-        const rowY = y + 34 + i * 32;
-        doc.font("Helvetica-Bold")
-            .fontSize(8)
-            .fillColor(COLORS.ink)
-            .text(f.title, fx, rowY, { width: rightW - 90, lineBreak: false });
-        doc.font("Helvetica")
-            .fontSize(7)
-            .fillColor(COLORS.muted)
-            .text(`${f.pct}%`, fx + rightW - 88, rowY, {
-                width: 28,
-                align: "right",
-            });
-        drawPill(doc, fx + rightW - 56, rowY - 1, f.label, f.label === "Excellent" || f.label === "Very Good" || f.label === "Good" ? "excellent" : f.label === "Fair" ? "warn" : "danger");
-        drawProgressBar(
-            doc,
-            fx,
-            rowY + 14,
-            rightW - 28,
-            f.pct,
-            f.label === "Needs Work" || f.label === "Poor"
-                ? "danger"
-                : f.label === "Fair"
-                  ? "warn"
-                  : "excellent"
-        );
+    doc.font("Helvetica")
+        .fontSize(7.5)
+        .fillColor(COLORS.muted)
+        .text(`Used  ${u.usedAmount || "—"}`, ux, y + 64, {
+            width: rightW - 28,
+            lineBreak: false,
+        });
+    doc.text(`Available  ${u.availableAmount || "—"}`, ux, y + 78, {
+        width: rightW - 28,
+        lineBreak: false,
+    });
+    doc.text(`Total limit  ${u.totalLimit || "—"}`, ux, y + 92, {
+        width: rightW - 28,
+        lineBreak: false,
     });
 
-    doc.y = y + h + 12;
-};
-
-const drawTrendAndUtilization = (doc, model) => {
-    ensureSpace(doc, 170);
-    const y = doc.y;
-    const leftW = (CONTENT_W - GAP) * 0.52;
-    const rightW = CONTENT_W - GAP - leftW;
-    const h = 158;
-
-    drawCard(doc, MARGIN, y, leftW, h);
-    drawCard(doc, MARGIN + leftW + GAP, y, rightW, h);
-
-    doc.font("Helvetica-Bold")
-        .fontSize(10)
-        .fillColor(COLORS.ink)
-        .text("Score Snapshot", MARGIN + 12, y + 12);
-
-    const trend = model.score.trend || [];
-    if (trend.length <= 1) {
+    if (u.tip) {
+        doc.roundedRect(ux, y + 110, rightW - 28, 20, 5).fill(COLORS.brandSoft);
         doc.font("Helvetica")
-            .fontSize(8)
-            .fillColor(COLORS.muted)
-            .text(
-                "Historical monthly trend is not available from this bureau pull. Current score is shown below.",
-                MARGIN + 12,
-                y + 36,
-                { width: leftW - 24 }
-            );
-        const score =
-            model.score.value == null || model.score.value < 0
-                ? "N/A"
-                : String(model.score.value);
-        doc.font("Helvetica-Bold")
-            .fontSize(32)
-            .fillColor(COLORS.blue)
-            .text(score, MARGIN + 12, y + 78, {
-                width: leftW - 24,
-                align: "center",
-            });
-        doc.font("Helvetica")
-            .fontSize(8)
-            .fillColor(COLORS.muted)
-            .text(model.score.bandLabel, MARGIN + 12, y + 118, {
-                width: leftW - 24,
-                align: "center",
-            });
-    } else {
-        // Simple polyline if multiple points ever provided
-        const plotX = MARGIN + 20;
-        const plotY = y + 40;
-        const plotW = leftW - 40;
-        const plotH = 90;
-        const values = trend.map((t) => Number(t.value));
-        const minV = Math.min(...values, 300);
-        const maxV = Math.max(...values, 900);
-        const points = trend.map((t, i) => {
-            const px =
-                plotX +
-                (trend.length === 1
-                    ? plotW / 2
-                    : (i / (trend.length - 1)) * plotW);
-            const py =
-                plotY +
-                plotH -
-                ((Number(t.value) - minV) / Math.max(1, maxV - minV)) * plotH;
-            return { x: px, y: py, label: t.label, value: t.value };
-        });
-        doc.save();
-        doc.moveTo(points[0].x, points[0].y);
-        points.slice(1).forEach((p) => doc.lineTo(p.x, p.y));
-        doc.strokeColor(COLORS.blue).lineWidth(1.5).stroke();
-        points.forEach((p) => {
-            doc.circle(p.x, p.y, 2.5).fill(COLORS.blue);
-            doc.font("Helvetica")
-                .fontSize(6)
-                .fillColor(COLORS.muted)
-                .text(String(p.value), p.x - 10, p.y - 12, {
-                    width: 20,
-                    align: "center",
-                });
-        });
-        doc.restore();
-    }
-
-    // Utilization
-    const ux = MARGIN + leftW + GAP;
-    doc.font("Helvetica-Bold")
-        .fontSize(10)
-        .fillColor(COLORS.ink)
-        .text("Credit Utilization", ux + 12, y + 12);
-
-    if (!model.utilization) {
-        doc.font("Helvetica")
-            .fontSize(8)
-            .fillColor(COLORS.muted)
-            .text(
-                "Utilization could not be calculated from available bureau limits.",
-                ux + 12,
-                y + 48,
-                { width: rightW - 24 }
-            );
-    } else {
-        const u = model.utilization;
-        const dcx = ux + 52;
-        const dcy = y + 78;
-        drawDonut(doc, dcx, dcy, 34, u.usedPct, u.tipTone);
-        doc.font("Helvetica-Bold")
-            .fontSize(14)
-            .fillColor(COLORS.ink)
-            .text(`${u.usedPct}%`, dcx - 22, dcy - 8, {
-                width: 44,
-                align: "center",
-            });
-        doc.font("Helvetica")
-            .fontSize(6)
-            .fillColor(COLORS.muted)
-            .text("Used", dcx - 22, dcy + 8, {
-                width: 44,
-                align: "center",
-            });
-
-        const lx = ux + 100;
-        const legend = [
-            { label: "Used", value: u.usedAmount },
-            { label: "Available", value: u.availableAmount },
-            { label: "Total Limit", value: u.totalLimit },
-        ];
-        legend.forEach((item, i) => {
-            const ly = y + 40 + i * 22;
-            doc.circle(lx, ly + 4, 3).fill(
-                i === 0 ? toneColor(u.tipTone) : COLORS.blueMid
-            );
-            doc.font("Helvetica")
-                .fontSize(7)
-                .fillColor(COLORS.muted)
-                .text(item.label, lx + 8, ly);
-            doc.font("Helvetica-Bold")
-                .fontSize(8)
-                .fillColor(COLORS.ink)
-                .text(item.value, lx + 8, ly + 9);
-        });
-
-        doc.roundedRect(ux + 12, y + 126, rightW - 24, 22, 6).fill(
-            COLORS.tipBg
-        );
-        doc.font("Helvetica")
-            .fontSize(7)
-            .fillColor(COLORS.blue)
-            .text(u.tip, ux + 18, y + 133, {
-                width: rightW - 36,
+            .fontSize(6.5)
+            .fillColor(COLORS.brand)
+            .text(u.tip, ux + 6, y + 116, {
+                width: rightW - 40,
                 ellipsis: true,
                 lineBreak: false,
             });
@@ -556,390 +323,365 @@ const drawTrendAndUtilization = (doc, model) => {
     doc.y = y + h + 12;
 };
 
-const drawAccountsSection = (doc, model) => {
-    const renderGroup = (title, rows) => {
-        if (!rows.length) return;
-        ensureSpace(doc, 60);
-        doc.font("Helvetica-Bold")
-            .fontSize(10)
-            .fillColor(COLORS.ink)
-            .text(title, MARGIN, doc.y);
-        doc.moveDown(0.4);
+const drawFactors = (doc, model) => {
+    const factors = (model.score.factors || []).slice(0, 4);
+    if (!factors.length) return;
 
-        const headers = [
-            "Type",
-            "Institution",
-            "Account",
-            "Limit / Loan",
-            "Balance",
-            "Status",
-            "Behaviour",
-        ];
-        const widths = [70, 95, 70, 70, 70, 55, 71];
-        ensureSpace(doc, 30);
-        let y = doc.y;
+    ensureSpace(doc, 28 + factors.length * 26);
+    const y0 = doc.y;
+    const h = 24 + factors.length * 26;
+    drawCard(doc, MARGIN, y0, CONTENT_W, h);
+
+    doc.font("Helvetica-Bold")
+        .fontSize(9)
+        .fillColor(COLORS.ink)
+        .text("Score factors", MARGIN + 12, y0 + 10, { lineBreak: false });
+
+    factors.forEach((f, i) => {
+        const rowY = y0 + 28 + i * 26;
+        const tone =
+            f.label === "Needs Work" || f.label === "Poor"
+                ? "danger"
+                : f.label === "Fair"
+                  ? "warn"
+                  : "excellent";
+        doc.font("Helvetica-Bold")
+            .fontSize(8)
+            .fillColor(COLORS.ink)
+            .text(f.title, MARGIN + 12, rowY, {
+                width: 160,
+                ellipsis: true,
+                lineBreak: false,
+            });
+        drawProgressBar(doc, MARGIN + 180, rowY + 3, 220, f.pct, tone);
+        doc.font("Helvetica")
+            .fontSize(7)
+            .fillColor(COLORS.muted)
+            .text(`${f.pct}%`, MARGIN + 408, rowY, {
+                width: 28,
+                lineBreak: false,
+            });
+        drawPill(doc, MARGIN + CONTENT_W - 78, rowY - 1, f.label, tone);
+    });
+
+    doc.y = y0 + h + 12;
+};
+
+const drawStatsStrip = (doc, model) => {
+    ensureSpace(doc, 72);
+    const y = doc.y;
+    const p = model.paymentSummary || {};
+    const items = [
+        { label: "On-time", value: `${p.onTimePct ?? "—"}%` },
+        { label: "Missed", value: String(p.missedPayments ?? "—") },
+        { label: "Active accts", value: String(p.activeAccounts ?? "—") },
+        { label: "Cards", value: String(p.creditCards ?? "—") },
+        { label: "Loans", value: String(p.loans ?? "—") },
+    ];
+    const cellW = CONTENT_W / items.length;
+    drawCard(doc, MARGIN, y, CONTENT_W, 58);
+
+    items.forEach((item, i) => {
+        const x = MARGIN + i * cellW;
+        if (i > 0) {
+            doc.save();
+            doc.moveTo(x, y + 10)
+                .lineTo(x, y + 48)
+                .strokeColor(COLORS.line)
+                .lineWidth(0.5)
+                .stroke();
+            doc.restore();
+        }
+        doc.font("Helvetica")
+            .fontSize(6.5)
+            .fillColor(COLORS.muted)
+            .text(item.label.toUpperCase(), x + 8, y + 12, {
+                width: cellW - 16,
+                align: "center",
+                lineBreak: false,
+            });
+        doc.font("Helvetica-Bold")
+            .fontSize(12)
+            .fillColor(COLORS.ink)
+            .text(item.value, x + 8, y + 28, {
+                width: cellW - 16,
+                align: "center",
+                lineBreak: false,
+            });
+    });
+    doc.y = y + 70;
+};
+
+const drawAccounts = (doc, model) => {
+    const rows = [...(model.activeAccounts || []), ...(model.closedAccounts || [])].slice(
+        0,
+        12
+    );
+
+    ensureSpace(doc, 50);
+    doc.font("Helvetica-Bold")
+        .fontSize(10)
+        .fillColor(COLORS.ink)
+        .text("Accounts", MARGIN, doc.y, { lineBreak: false });
+    doc.y += 14;
+
+    if (!rows.length) {
+        drawCard(doc, MARGIN, doc.y, CONTENT_W, 36, { fill: COLORS.soft });
+        doc.font("Helvetica")
+            .fontSize(8)
+            .fillColor(COLORS.muted)
+            .text(
+                "No retail accounts were returned in this bureau pull.",
+                MARGIN + 12,
+                doc.y + 12,
+                { width: CONTENT_W - 24, lineBreak: false }
+            );
+        doc.y += 48;
+        return;
+    }
+
+    const headers = ["Type", "Lender", "Account", "Limit", "Balance", "Status"];
+    const widths = [80, 110, 80, 75, 75, 83];
+
+    const drawTableHeader = (y) => {
         doc.rect(MARGIN, y, CONTENT_W, 16).fill(COLORS.navy);
         let x = MARGIN;
         headers.forEach((h, i) => {
             doc.font("Helvetica-Bold")
                 .fontSize(6.5)
                 .fillColor(COLORS.white)
-                .text(h, x + 3, y + 4, {
-                    width: widths[i] - 6,
+                .text(h, x + 4, y + 4, {
+                    width: widths[i] - 8,
                     lineBreak: false,
                 });
             x += widths[i];
         });
-        y += 16;
-
-        rows.slice(0, 40).forEach((a, idx) => {
-            if (y + 20 > PAGE_H - FOOTER_H - 8) {
-                doc.addPage();
-                y = MARGIN;
-                doc.rect(MARGIN, y, CONTENT_W, 16).fill(COLORS.navy);
-                x = MARGIN;
-                headers.forEach((h, i) => {
-                    doc.font("Helvetica-Bold")
-                        .fontSize(6.5)
-                        .fillColor(COLORS.white)
-                        .text(h, x + 3, y + 4, {
-                            width: widths[i] - 6,
-                            lineBreak: false,
-                        });
-                    x += widths[i];
-                });
-                y += 16;
-            }
-            if (idx % 2 === 1) {
-                doc.rect(MARGIN, y, CONTENT_W, 18).fill(COLORS.soft);
-            }
-            const cells = [
-                a.accountType,
-                a.institution,
-                a.accountNumber,
-                a.sanction,
-                a.usedPct != null
-                    ? `${a.balance} (${a.usedPct}%)`
-                    : a.balance,
-                a.active ? "Active" : a.status || "Closed",
-                a.behaviour?.label || "—",
-            ];
-            x = MARGIN;
-            cells.forEach((cell, i) => {
-                if (i === 5) {
-                    drawPill(
-                        doc,
-                        x + 2,
-                        y + 3,
-                        a.active ? "Active" : "Closed",
-                        a.active ? "excellent" : "muted"
-                    );
-                } else if (i === 6) {
-                    drawPill(
-                        doc,
-                        x + 2,
-                        y + 3,
-                        a.behaviour?.label || "—",
-                        a.behaviour?.tone || "ok"
-                    );
-                } else {
-                    doc.font("Helvetica")
-                        .fontSize(6.5)
-                        .fillColor(COLORS.ink)
-                        .text(String(cell ?? "—"), x + 3, y + 5, {
-                            width: widths[i] - 6,
-                            ellipsis: true,
-                            lineBreak: false,
-                        });
-                }
-                x += widths[i];
-            });
-            y += 18;
-        });
-        doc.y = y + 10;
+        return y + 16;
     };
 
-    ensureSpace(doc, 40);
-    doc.font("Helvetica-Bold")
-        .fontSize(12)
-        .fillColor(COLORS.ink)
-        .text("Account Details", MARGIN, doc.y);
-    doc.moveDown(0.35);
+    let y = drawTableHeader(doc.y);
 
-    renderGroup(
-        `Active Accounts (${model.activeAccounts.length})`,
-        model.activeAccounts
-    );
-    renderGroup(
-        `Closed Accounts (${model.closedAccounts.length})`,
-        model.closedAccounts
-    );
+    rows.forEach((a, idx) => {
+        if (y + 18 > pageBottom() - 4) {
+            doc.addPage();
+            y = drawTableHeader(MARGIN);
+        }
+        if (idx % 2 === 1) {
+            doc.rect(MARGIN, y, CONTENT_W, 18).fill(COLORS.soft);
+        }
+        const cells = [
+            a.accountType,
+            a.institution,
+            a.accountNumber,
+            a.sanction,
+            a.balance,
+            a.active ? "Active" : a.status || "Closed",
+        ];
+        let x = MARGIN;
+        cells.forEach((cell, i) => {
+            if (i === 5) {
+                drawPill(
+                    doc,
+                    x + 4,
+                    y + 3,
+                    a.active ? "Active" : "Closed",
+                    a.active ? "excellent" : "warn"
+                );
+            } else {
+                doc.font("Helvetica")
+                    .fontSize(6.5)
+                    .fillColor(COLORS.ink)
+                    .text(String(cell ?? "—"), x + 4, y + 5, {
+                        width: widths[i] - 8,
+                        ellipsis: true,
+                        lineBreak: false,
+                    });
+            }
+            x += widths[i];
+        });
+        y += 18;
+    });
 
-    if (!model.accounts.length) {
-        doc.font("Helvetica")
-            .fontSize(8)
-            .fillColor(COLORS.muted)
-            .text("No retail accounts were returned in this bureau pull.", MARGIN, doc.y);
-        doc.moveDown(0.8);
-    }
+    doc.y = y + 10;
 };
 
-const drawBottomCards = (doc, model) => {
-    ensureSpace(doc, 180);
+const drawEnquiriesAndPrevious = (doc, model) => {
+    ensureSpace(doc, 120);
     const y = doc.y;
-    const colW = (CONTENT_W - GAP * 2) / 3;
-    const h = 168;
-    const previous = model.previousReports || [];
+    const leftW = (CONTENT_W - GAP) * 0.58;
+    const rightW = CONTENT_W - GAP - leftW;
+    const enquiries = (model.enquiries || []).slice(0, 4);
+    const previous = (model.previousReports || []).slice(0, 4);
+    const h = Math.max(
+        88,
+        36 + Math.max(enquiries.length, previous.length, 1) * 22
+    );
 
-    const drawBox = (index, title, render) => {
-        const x = MARGIN + index * (colW + GAP);
-        drawCard(doc, x, y, colW, h);
-        doc.font("Helvetica-Bold")
-            .fontSize(9)
-            .fillColor(COLORS.ink)
-            .text(title, x + 10, y + 10, { width: colW - 20 });
-        render(x, y);
-    };
+    drawCard(doc, MARGIN, y, leftW, h);
+    drawCard(doc, MARGIN + leftW + GAP, y, rightW, h);
 
-    drawBox(0, "Recent Enquiries", (x, boxY) => {
-        const rows = (model.enquiries || []).slice(0, 5);
-        if (!rows.length) {
-            doc.font("Helvetica")
-                .fontSize(7.5)
-                .fillColor(COLORS.muted)
-                .text("No recent enquiries.", x + 10, boxY + 36, {
-                    width: colW - 20,
-                });
-            return;
-        }
-        rows.forEach((e, i) => {
-            const ry = boxY + 30 + i * 24;
+    doc.font("Helvetica-Bold")
+        .fontSize(9)
+        .fillColor(COLORS.ink)
+        .text("Recent enquiries", MARGIN + 12, y + 10, { lineBreak: false });
+
+    if (!enquiries.length) {
+        doc.font("Helvetica")
+            .fontSize(7.5)
+            .fillColor(COLORS.muted)
+            .text("No recent enquiries.", MARGIN + 12, y + 36, {
+                lineBreak: false,
+            });
+    } else {
+        enquiries.forEach((e, i) => {
+            const ry = y + 30 + i * 22;
             doc.font("Helvetica-Bold")
                 .fontSize(7)
                 .fillColor(COLORS.ink)
-                .text(e.institution, x + 10, ry, {
-                    width: colW - 50,
+                .text(e.institution || "—", MARGIN + 12, ry, {
+                    width: leftW - 70,
                     ellipsis: true,
                     lineBreak: false,
                 });
             doc.font("Helvetica")
                 .fontSize(6.5)
                 .fillColor(COLORS.muted)
-                .text(`${e.purpose} · ${e.date}`, x + 10, ry + 10, {
-                    width: colW - 50,
+                .text(`${e.purpose || "—"} · ${e.date || "—"}`, MARGIN + 12, ry + 10, {
+                    width: leftW - 70,
                     ellipsis: true,
                     lineBreak: false,
                 });
             drawPill(
                 doc,
-                x + colW - 42,
-                ry + 2,
+                MARGIN + leftW - 48,
+                ry + 4,
                 e.impact || "Hard",
                 e.impact === "Soft" ? "ok" : "warn"
             );
         });
-    });
+    }
 
-    drawBox(1, "Payment History Summary", (x, boxY) => {
-        const p = model.paymentSummary || {};
-        const items = [
-            { label: "On-time Payments", value: `${p.onTimePct ?? "—"}%` },
-            { label: "Missed Payments", value: String(p.missedPayments ?? "—") },
-            { label: "Active Accounts", value: String(p.activeAccounts ?? "—") },
-            { label: "Oldest Account", value: String(p.oldestAccount ?? "—") },
-            { label: "Credit Cards", value: String(p.creditCards ?? "—") },
-            { label: "Loans", value: String(p.loans ?? "—") },
-        ];
-        items.forEach((item, i) => {
-            const col = i % 2;
-            const row = Math.floor(i / 2);
-            const ix = x + 10 + col * ((colW - 16) / 2);
-            const iy = boxY + 32 + row * 40;
-            doc.roundedRect(ix, iy, (colW - 24) / 2, 34, 6).fill(COLORS.soft);
-            doc.font("Helvetica")
-                .fontSize(6.5)
-                .fillColor(COLORS.muted)
-                .text(item.label, ix + 6, iy + 6, {
-                    width: (colW - 24) / 2 - 10,
-                });
-            doc.font("Helvetica-Bold")
-                .fontSize(9)
-                .fillColor(COLORS.ink)
-                .text(item.value, ix + 6, iy + 17, {
-                    width: (colW - 24) / 2 - 10,
-                    ellipsis: true,
-                    lineBreak: false,
-                });
-        });
-    });
+    const rx = MARGIN + leftW + GAP + 12;
+    doc.font("Helvetica-Bold")
+        .fontSize(9)
+        .fillColor(COLORS.ink)
+        .text("Previous scores", rx, y + 10, { lineBreak: false });
 
-    drawBox(2, previous.length ? "Previous Reports" : "Report Meta", (x, boxY) => {
-        if (previous.length) {
-            previous.slice(0, 5).forEach((item, i) => {
-                const ly = boxY + 32 + i * 24;
-                doc.font("Helvetica-Bold")
-                    .fontSize(8)
-                    .fillColor(COLORS.ink)
-                    .text(String(item.score ?? "—"), x + 10, ly, {
-                        width: 36,
-                    });
-                doc.font("Helvetica")
-                    .fontSize(7)
-                    .fillColor(COLORS.muted)
-                    .text(String(item.date || "—"), x + 48, ly + 1, {
-                        width: colW - 60,
-                        ellipsis: true,
-                        lineBreak: false,
-                    });
+    if (!previous.length) {
+        doc.font("Helvetica")
+            .fontSize(7.5)
+            .fillColor(COLORS.muted)
+            .text("No previous CredAxis pulls.", rx, y + 36, {
+                width: rightW - 24,
+                lineBreak: false,
             });
-            return;
-        }
-
-        const lines = [
-            { label: "Provider", value: model.meta.provider },
-            { label: "Generated", value: formatDateTime(model.meta.generatedAt) },
-            { label: "Reference", value: model.meta.referenceId },
-            {
-                label: "Enquiries (30d)",
-                value: model.enquirySummary?.past30Days || "—",
-            },
-            {
-                label: "Enquiries (12m)",
-                value: model.enquirySummary?.past12Months || "—",
-            },
-            {
-                label: "Total Accounts",
-                value: model.summary?.noOfAccounts || model.accounts.length,
-            },
-        ];
-        lines.forEach((line, i) => {
-            const ly = boxY + 32 + i * 20;
+    } else {
+        previous.forEach((r, i) => {
+            const ry = y + 34 + i * 20;
+            doc.font("Helvetica-Bold")
+                .fontSize(10)
+                .fillColor(COLORS.brand)
+                .text(String(r.score ?? "—"), rx, ry, { lineBreak: false });
             doc.font("Helvetica")
                 .fontSize(7)
                 .fillColor(COLORS.muted)
-                .text(line.label, x + 10, ly, { width: 70 });
-            doc.font("Helvetica-Bold")
-                .fontSize(7.5)
-                .fillColor(COLORS.ink)
-                .text(String(line.value), x + 80, ly, {
-                    width: colW - 92,
-                    ellipsis: true,
+                .text(r.date || "", rx + 40, ry + 2, {
+                    width: rightW - 60,
                     lineBreak: false,
                 });
         });
-    });
+    }
 
     doc.y = y + h + 12;
 };
 
-const drawClosing = (doc, model) => {
-    ensureSpace(doc, 120);
-    drawCard(doc, MARGIN, doc.y, CONTENT_W, 28, {
-        fill: COLORS.soft,
-        radius: 8,
-    });
-    doc.font("Helvetica")
-        .fontSize(8)
-        .fillColor(COLORS.muted)
-        .text(
-            `Last checked: ${formatDateTime(model.meta.generatedAt)}  ·  Decentro Txn: ${model.meta.decentroTxnId}`,
-            MARGIN + 12,
-            doc.y + 9,
-            { width: CONTENT_W - 24 }
-        );
-    doc.y += 40;
-
-    ensureSpace(doc, 70);
-    drawCard(doc, MARGIN, doc.y, CONTENT_W, 36, {
-        fill: COLORS.tipBg,
-        stroke: COLORS.blueMid,
-        radius: 8,
-    });
-    doc.font("Helvetica-Bold")
-        .fontSize(8)
-        .fillColor(COLORS.blue)
-        .text("Tip", MARGIN + 12, doc.y + 8);
-    doc.font("Helvetica")
-        .fontSize(7.5)
-        .fillColor(COLORS.ink)
-        .text(
-            model.utilization?.tip ||
-                "Pay EMIs on time and keep credit utilization low to strengthen your score.",
-            MARGIN + 12,
-            doc.y + 19,
-            { width: CONTENT_W - 24 }
-        );
-    doc.y += 48;
-
+const drawSummary = (doc, model) => {
     ensureSpace(doc, 90);
-    doc.font("Helvetica-Bold")
-        .fontSize(10)
-        .fillColor(COLORS.ink)
-        .text("Overall Summary", MARGIN, doc.y);
-    doc.moveDown(0.3);
-    doc.font("Helvetica")
-        .fontSize(8)
-        .fillColor(COLORS.muted)
-        .text(model.overviewText || "—", MARGIN, doc.y, {
-            width: CONTENT_W,
-            align: "left",
-        });
-    doc.moveDown(0.8);
+    const y = doc.y;
+    drawCard(doc, MARGIN, y, CONTENT_W, 78, { fill: COLORS.soft });
 
-    ensureSpace(doc, 70);
     doc.font("Helvetica-Bold")
         .fontSize(9)
         .fillColor(COLORS.ink)
-        .text("Notes", MARGIN, doc.y);
-    doc.moveDown(0.25);
-    const notes = [
-        "This CredAxis report is generated from Equifax bureau data returned via Decentro.",
-        "Figures reflect bureau records as of the pull time and may differ from lender systems.",
-        "This document is for informational use only and is not a lending decision.",
-    ];
-    notes.forEach((n) => {
-        doc.font("Helvetica")
-            .fontSize(7.5)
-            .fillColor(COLORS.muted)
-            .text(`•  ${n}`, MARGIN, doc.y, { width: CONTENT_W });
-        doc.moveDown(0.2);
-    });
+        .text("Summary", MARGIN + 12, y + 10, { lineBreak: false });
+
+    doc.font("Helvetica")
+        .fontSize(8)
+        .fillColor(COLORS.muted)
+        .text(model.overviewText || "—", MARGIN + 12, y + 26, {
+            width: CONTENT_W - 24,
+            height: 40,
+            ellipsis: true,
+        });
+
+    doc.y = y + 90;
+
+    doc.font("Helvetica")
+        .fontSize(6.5)
+        .fillColor(COLORS.softMuted)
+        .text(
+            `Checked ${formatDateTime(model.meta.generatedAt)} · Decentro ${model.meta.decentroTxnId}`,
+            MARGIN,
+            doc.y,
+            { width: CONTENT_W, lineBreak: false }
+        );
+    doc.y += 12;
+    doc.text(
+        "For informational use only. Figures reflect bureau records at pull time and may differ from lender systems.",
+        MARGIN,
+        doc.y,
+        { width: CONTENT_W, lineBreak: false }
+    );
+    doc.y += 10;
 };
 
+/**
+ * Footer on each content page WITHOUT creating extra blank pages.
+ * PDFKit auto-paginates if you draw below bottom margin — so margins are
+ * zeroed while stamping the footer.
+ */
 const drawFooter = (doc) => {
-    const pageCount = doc.bufferedPageRange();
-    for (let i = 0; i < pageCount.count; i += 1) {
+    const range = doc.bufferedPageRange();
+    for (let i = 0; i < range.count; i += 1) {
         doc.switchToPage(i);
+        const saved = { ...doc.page.margins };
+        doc.page.margins = { top: 0, bottom: 0, left: 0, right: 0 };
+
         doc.save();
-        doc.moveTo(MARGIN, PAGE_H - 32)
-            .lineTo(PAGE_W - MARGIN, PAGE_H - 32)
+        doc.moveTo(MARGIN, PAGE_H - 28)
+            .lineTo(PAGE_W - MARGIN, PAGE_H - 28)
             .strokeColor(COLORS.line)
             .lineWidth(0.5)
             .stroke();
+
         doc.font("Helvetica")
-            .fontSize(7)
-            .fillColor(COLORS.muted)
-            .text(
-                "MyCredAxis · Equifax credit data via Decentro · Informational use only",
-                MARGIN,
-                PAGE_H - 24,
-                { width: CONTENT_W - 80 }
-            )
-            .text(`Page ${i + 1} of ${pageCount.count}`, MARGIN, PAGE_H - 24, {
-                width: CONTENT_W,
-                align: "right",
-            });
+            .fontSize(6.5)
+            .fillColor(COLORS.softMuted);
+        textSafe(
+            doc,
+            "MyCredAxis · Equifax via Decentro · Informational only",
+            MARGIN,
+            PAGE_H - 20,
+            { width: CONTENT_W - 90 }
+        );
+        textSafe(doc, `${i + 1} / ${range.count}`, MARGIN, PAGE_H - 20, {
+            width: CONTENT_W,
+            align: "right",
+        });
         doc.restore();
+
+        doc.page.margins = saved;
     }
 };
 
 const renderDocument = (doc, model) => {
     drawHeader(doc, model);
-    drawScoreAndFactors(doc, model);
-    drawTrendAndUtilization(doc, model);
-    drawAccountsSection(doc, model);
-    drawBottomCards(doc, model);
-    drawClosing(doc, model);
+    drawScoreRow(doc, model);
+    drawFactors(doc, model);
+    drawStatsStrip(doc, model);
+    drawAccounts(doc, model);
+    drawEnquiriesAndPrevious(doc, model);
+    drawSummary(doc, model);
 };
 
 /**
@@ -964,11 +706,12 @@ exports.buildAndSaveCredAxisPdf = async (raw, meta = {}) => {
             size: "A4",
             margins: {
                 top: MARGIN,
-                bottom: FOOTER_H,
+                bottom: FOOTER_ZONE,
                 left: MARGIN,
                 right: MARGIN,
             },
             bufferPages: true,
+            autoFirstPage: true,
             info: {
                 Title: `MyCredAxis Credit Report — ${model.personal.fullName}`,
                 Author: "MyCredAxis",

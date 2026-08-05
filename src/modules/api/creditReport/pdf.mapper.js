@@ -248,16 +248,33 @@ const mapScore = (report) => {
                   { description: "Credit Age" },
                   { description: "Credit Mix" },
               ]
-    ).map((f, index) => {
-        const meta = factorMetaFromText(f.description, band.pct || 70);
-        return {
-            code: f.code || "",
-            description: f.description,
-            title: factorTitle(f.description, index),
-            pct: meta.pct,
-            label: meta.label,
-        };
-    });
+    )
+        .map((f, index) => {
+            const meta = factorMetaFromText(f.description, band.pct || 70);
+            return {
+                code: f.code || "",
+                description: f.description,
+                title: factorTitle(f.description, index),
+                pct: meta.pct,
+                label: meta.label,
+            };
+        })
+        .filter((f, i, arr) => {
+            // Bureau often repeats the same utilization factor
+            const key = String(f.title || f.description || "")
+                .trim()
+                .toLowerCase();
+            return (
+                key &&
+                arr.findIndex(
+                    (x) =>
+                        String(x.title || x.description || "")
+                            .trim()
+                            .toLowerCase() === key
+                ) === i
+            );
+        })
+        .slice(0, 4);
 
     return {
         value,
