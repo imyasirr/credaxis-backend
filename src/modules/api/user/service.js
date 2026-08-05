@@ -183,6 +183,14 @@ exports.getDashboard = async (userId) => {
             startDate: m.startDate,
             endDate: m.endDate,
             checkoutUrl: m.checkoutUrl,
+            auth: m.auth
+                ? {
+                      checkoutUrl: m.auth.checkoutUrl,
+                      shareUrl: m.auth.shareUrl,
+                      qr: m.auth.qr,
+                      medium: m.auth.medium,
+                  }
+                : null,
             createdAt: m.createdAt,
         };
     };

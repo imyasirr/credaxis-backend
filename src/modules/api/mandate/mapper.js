@@ -1,6 +1,49 @@
+/**
+ * RocketPay stores customer auth (QR / UPI deep-link / share checkout) under
+ * meta.txns[].meta.auth_meta — see MandateDocs entities → Mandate Response.
+ * Prefer latest usable QR txn, else latest LINK txn.
+ */
+function extractMandateAuth(meta, checkoutUrlFallback) {
+    const txns = Array.isArray(meta?.txns) ? meta.txns : [];
+    const withAuth = txns.filter((t) => t?.meta?.auth_meta);
+
+    const preferQr = [...withAuth]
+        .reverse()
+        .find((t) => t.meta.auth_meta.QR || String(t.medium || "").toUpperCase() === "QR");
+    const preferLink = [...withAuth]
+        .reverse()
+        .find((t) => String(t.medium || "").toUpperCase() === "LINK");
+    const pick = preferQr || preferLink || withAuth[withAuth.length - 1] || null;
+
+    const authMeta = pick?.meta?.auth_meta || {};
+    const qr = authMeta.QR || null;
+    const checkoutUrl =
+        meta?.mandate_auth_checkout_url ||
+        meta?.return_url ||
+        checkoutUrlFallback ||
+        null;
+
+    return {
+        checkoutUrl,
+        /** Same as checkoutUrl — open in WebView / share as link */
+        shareUrl: checkoutUrl,
+        /** upi://mandate?... deep link OR gateway QR / simulator URL */
+        qr,
+        medium: pick?.medium || (qr ? "QR" : checkoutUrl ? "LINK" : null),
+        token: authMeta.token || null,
+        gatewayName: authMeta.gateway_name || null,
+        gatewayReferenceId: authMeta.gateway_reference_id || null,
+        txnState: pick?.state || null,
+        txnId: pick?.id || null,
+    };
+}
+
+exports.extractMandateAuth = extractMandateAuth;
+
 exports.formatMandate = (doc) => {
     if (!doc) return null;
     const data = doc.toObject ? doc.toObject() : doc;
+    const auth = extractMandateAuth(data.meta, data.checkoutUrl);
 
     return {
         id: data._id,
@@ -20,7 +63,9 @@ exports.formatMandate = (doc) => {
         timeZone: data.timeZone,
         paymentOrderId: data.paymentOrderId,
         mmsId: data.mmsId,
-        checkoutUrl: data.checkoutUrl,
+        checkoutUrl: auth.checkoutUrl || data.checkoutUrl || null,
+        /** Mobile helper: QR + share/checkout for UPI Autopay auth UI */
+        auth,
         payer: data.payer,
         payees: data.payees,
         clientMeta: data.clientMeta,
