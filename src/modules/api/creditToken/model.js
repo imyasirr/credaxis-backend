@@ -1,4 +1,5 @@
 const mongoose = require("mongoose");
+const { TOKEN_TYPES } = require("./constants");
 
 const creditTokenSchema = new mongoose.Schema(
     {
@@ -16,7 +17,7 @@ const creditTokenSchema = new mongoose.Schema(
 
         tokenType: {
             type: String,
-            enum: ["CRIF", "CIBIL", "EXPERIAN"],
+            enum: TOKEN_TYPES,
             required: true,
             index: true,
         },

@@ -1,6 +1,6 @@
 const mongoose = require("mongoose");
 
-const TOKEN_TYPES = ["CRIF", "CIBIL", "EXPERIAN"];
+const { TOKEN_TYPES } = require("./constants");
 
 const partnerTokenBalanceSchema = new mongoose.Schema(
     {

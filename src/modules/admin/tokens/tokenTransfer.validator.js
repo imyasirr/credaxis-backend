@@ -6,7 +6,7 @@ exports.createTransfer = [
 
     body("tokenType")
         .isIn(TOKEN_TYPES)
-        .withMessage("Token type must be CRIF, CIBIL or EXPERIAN"),
+        .withMessage("Token type must be EQUIFAX"),
 
     body("quantity")
         .isInt({ min: 1 })

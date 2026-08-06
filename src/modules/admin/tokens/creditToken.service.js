@@ -1,8 +1,10 @@
 const CreditToken = require("../../api/creditToken/model");
 const { formatCreditToken } = require("../../api/creditToken/mapper");
+const {
+    TOKEN_TYPES,
+    DEFAULT_TOKEN_TYPE,
+} = require("../../api/creditToken/constants");
 const ApiError = require("../../../utils/ApiError");
-
-const TOKEN_TYPES = ["CRIF", "CIBIL", "EXPERIAN"];
 
 const SORTABLE_FIELDS = {
     title: "title",
@@ -81,7 +83,7 @@ exports.createToken = async (adminId, body) => {
     const token = await CreditToken.create({
         title: body.title.trim(),
         description: body.description?.trim() || "",
-        tokenType: body.tokenType,
+        tokenType: body.tokenType || DEFAULT_TOKEN_TYPE,
         planType: body.planType || "NORMAL",
         badge: body.badge?.trim() || "",
         price: Number(body.price),

@@ -1,6 +1,7 @@
 const { body } = require("express-validator");
-
-const TOKEN_TYPES = ["CRIF", "CIBIL", "EXPERIAN"];
+const {
+    TOKEN_TYPES,
+} = require("../../api/creditToken/constants");
 
 const PLAN_TYPES = ["NORMAL", "POPULAR"];
 
@@ -10,8 +11,9 @@ exports.createToken = [
     body("description").optional().trim(),
 
     body("tokenType")
+        .optional()
         .isIn(TOKEN_TYPES)
-        .withMessage("Invalid token type"),
+        .withMessage("Token type must be EQUIFAX"),
 
     body("planType")
         .optional()
@@ -51,7 +53,7 @@ exports.updateToken = [
     body("tokenType")
         .optional()
         .isIn(TOKEN_TYPES)
-        .withMessage("Invalid token type"),
+        .withMessage("Token type must be EQUIFAX"),
 
     body("planType")
         .optional()

@@ -1,4 +1,5 @@
 const mongoose = require("mongoose");
+const { TOKEN_TYPES } = require("./constants");
 
 const PAYMENT_METHODS = ["WALLET", "ONLINE", "UPI", "CARD", "NET_BANKING", "CASH"];
 const PURCHASE_STATUSES = ["PENDING", "SUCCESS", "FAILED", "REFUNDED"];
@@ -33,7 +34,7 @@ const tokenPurchaseSchema = new mongoose.Schema(
 
         tokenType: {
             type: String,
-            enum: ["CRIF", "CIBIL", "EXPERIAN"],
+            enum: TOKEN_TYPES,
             required: true,
             index: true,
         },

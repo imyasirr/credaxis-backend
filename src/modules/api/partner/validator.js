@@ -1,4 +1,5 @@
 const { body, param, query } = require("express-validator");
+const { TOKEN_TYPES } = require("../creditToken/constants");
 
 const partnerFields = [
     body("businessName")
@@ -97,7 +98,7 @@ exports.approve = [
 exports.getTokenPlans = [
     query("page").optional().isInt({ min: 1 }),
     query("limit").optional().isInt({ min: 1, max: 100 }),
-    query("tokenType").optional().isIn(["CRIF", "CIBIL", "EXPERIAN"]),
+    query("tokenType").optional().isIn(TOKEN_TYPES),
     query("planType").optional().isIn(["NORMAL", "POPULAR"]),
 ];
 
@@ -115,7 +116,7 @@ exports.purchaseTokens = [
 exports.getTokenPurchases = [
     query("page").optional().isInt({ min: 1 }),
     query("limit").optional().isInt({ min: 1, max: 100 }),
-    query("tokenType").optional().isIn(["CRIF", "CIBIL", "EXPERIAN"]),
+    query("tokenType").optional().isIn(TOKEN_TYPES),
     query("status").optional().isIn(["PENDING", "SUCCESS", "FAILED", "REFUNDED"]),
     query("paymentMethod")
         .optional()

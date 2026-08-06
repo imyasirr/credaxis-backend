@@ -1,3 +1,5 @@
+const { DEFAULT_TOKEN_TYPE } = require("./constants");
+
 exports.formatCreditToken = (token) => {
     if (!token) return null;
 
@@ -7,7 +9,7 @@ exports.formatCreditToken = (token) => {
         id: data._id,
         title: data.title,
         description: data.description || "",
-        tokenType: data.tokenType || data.badge || "CRIF",
+        tokenType: data.tokenType || data.badge || DEFAULT_TOKEN_TYPE,
         planType: data.planType || "NORMAL",
         badge: data.badge || "",
         price: data.price,

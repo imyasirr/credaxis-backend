@@ -9,7 +9,7 @@ const TRANSFER_REASONS = [
     "OTHER",
 ];
 
-const TOKEN_TYPES = ["CRIF", "CIBIL", "EXPERIAN"];
+const { TOKEN_TYPES } = require("./constants");
 
 const tokenTransferSchema = new mongoose.Schema(
     {

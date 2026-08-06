@@ -13,6 +13,11 @@ const ROLES = require("../../../constants/roles");
 const { generateAccessToken } = require("../../../utils/jwt");
 const { generateOtp, getOtpExpiry } = require("../../../utils/generateOtp");
 const {
+    getPlayReviewConfig,
+    isPlayReviewLogin,
+    normalizeMobile,
+} = require("../../../utils/playReviewAuth");
+const {
     formatAuthUser,
     formatAuthPayload,
     getAuthRedirect,
@@ -115,24 +120,33 @@ const sendOtp = async (mobile, purpose, userId = null) => {
         }
     }
 
-    const otp = generateOtp();
+    const playReview = getPlayReviewConfig();
+    const isReviewMobile =
+        playReview && normalizeMobile(mobile) === playReview.mobile;
+
+    const otp = isReviewMobile ? playReview.otp : generateOtp();
+    const expiresAt = isReviewMobile
+        ? getOtpExpiry(60 * 24 * 365)
+        : getOtpExpiry(5);
 
     await otpRepository.upsertOtp({
         userId,
         mobile,
         purpose,
         otp,
-        expiresAt: getOtpExpiry(5),
+        expiresAt,
     });
 
-    const fast2sms = require("../../../integrations/fast2sms/fast2sms.client");
-    try {
-        await fast2sms.sendOtp(mobile, otp);
-    } catch (err) {
-        console.error(`[Fast2SMS] OTP send failed for ${mobile}:`, err.message);
-        // In non-production, still allow login via response otp if SMS fails
-        if (process.env.NODE_ENV === "production") {
-            throw err;
+    if (!isReviewMobile) {
+        const fast2sms = require("../../../integrations/fast2sms/fast2sms.client");
+        try {
+            await fast2sms.sendOtp(mobile, otp);
+        } catch (err) {
+            console.error(`[Fast2SMS] OTP send failed for ${mobile}:`, err.message);
+            // In non-production, still allow login via response otp if SMS fails
+            if (process.env.NODE_ENV === "production") {
+                throw err;
+            }
         }
     }
 
@@ -149,6 +163,18 @@ const sendOtp = async (mobile, purpose, userId = null) => {
 };
 
 const validateOtp = async (mobile, otp, purpose) => {
+    if (isPlayReviewLogin(mobile, otp)) {
+        const playReview = getPlayReviewConfig();
+        await otpRepository.upsertOtp({
+            userId: null,
+            mobile: playReview.mobile,
+            purpose,
+            otp: playReview.otp,
+            expiresAt: getOtpExpiry(60 * 24 * 365),
+        });
+        return { isVerified: true };
+    }
+
     const otpRecord = await otpRepository.findValid(mobile, purpose);
 
     if (!otpRecord) {

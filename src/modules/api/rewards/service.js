@@ -10,7 +10,10 @@ const {
     creditPartnerBalance,
 } = require("../creditToken/tokenTransfer.service");
 const TokenTransfer = require("../creditToken/tokenTransfer.model");
-const { TOKEN_TYPES } = TokenTransfer;
+const {
+    TOKEN_TYPES,
+    DEFAULT_TOKEN_TYPE,
+} = require("../creditToken/constants");
 const ApiError = require("../../../utils/ApiError");
 
 const AUTO_CLAIM_TYPES = new Set(["NO_PRIZE", "COINS", "CASH", "TOKEN", "COUPON"]);
@@ -27,8 +30,8 @@ const expireStaleRewards = async (userId) => {
 };
 
 const resolveTokenType = (prizeOrReward) => {
-    const raw = String(prizeOrReward?.tokenType || "CRIF").toUpperCase();
-    return TOKEN_TYPES.includes(raw) ? raw : "CRIF";
+    const raw = String(prizeOrReward?.tokenType || DEFAULT_TOKEN_TYPE).toUpperCase();
+    return TOKEN_TYPES.includes(raw) ? raw : DEFAULT_TOKEN_TYPE;
 };
 
 const generateTransferId = () =>
@@ -48,7 +51,7 @@ const fulfillPrizeLedger = async ({
     prizeTitle,
     source = "OTHER",
     gameType = null,
-    tokenType = "CRIF",
+    tokenType = DEFAULT_TOKEN_TYPE,
     grantedBy = null,
 }) => {
     const amount = Number(value) || 0;
@@ -153,7 +156,7 @@ const buildGrantMessage = (prizeType, value, title, fulfillMeta) => {
     }
     if (prizeType === "TOKEN") {
         if (fulfillMeta?.partnerCredited) {
-            return `${value} ${fulfillMeta.tokenType || "CRIF"} tokens added — ${title}`;
+            return `${value} ${fulfillMeta.tokenType || DEFAULT_TOKEN_TYPE} tokens added — ${title}`;
         }
         return `You won ${value} tokens — ${title}. Partner account required to use tokens.`;
     }

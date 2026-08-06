@@ -1,3 +1,5 @@
+const { TOKEN_TYPES } = require("./constants");
+
 const REASON_LABELS = {
     BONUS: "Bonus",
     OFFER: "Offer",
@@ -47,7 +49,7 @@ exports.formatTokenTransfer = (transfer) => {
 };
 
 exports.formatPartnerTokenBalance = (balances = []) => {
-    const types = ["CRIF", "CIBIL", "EXPERIAN"];
+    const types = TOKEN_TYPES;
     const map = Object.fromEntries(
         balances.map((item) => {
             const data = item.toObject ? item.toObject() : item;
