@@ -6,11 +6,13 @@ const {
 } = require("../../../integrations/razorpay/constants");
 const { formatPayment } = require("./mapper");
 const creditCheckFeeService = require("./creditCheckFee.service");
+const mandateCreateFeeService = require("./mandateCreateFee.service");
 const ApiError = require("../../../utils/ApiError");
 
 const PURPOSE_LABELS = {
     [PAYMENT_PURPOSES.WALLET_TOPUP]: "Wallet top-up",
     [PAYMENT_PURPOSES.CREDIT_CHECK]: "Credit score check",
+    [PAYMENT_PURPOSES.MANDATE_CREATE]: "Mandate create fee",
 };
 
 const buildReceipt = (purpose) =>
@@ -19,6 +21,10 @@ const buildReceipt = (purpose) =>
 const resolveAmount = async (purpose, amount) => {
     if (purpose === PAYMENT_PURPOSES.CREDIT_CHECK) {
         return creditCheckFeeService.resolveCreditCheckAmount();
+    }
+
+    if (purpose === PAYMENT_PURPOSES.MANDATE_CREATE) {
+        return mandateCreateFeeService.resolveMandateCreateAmount();
     }
 
     if (purpose === PAYMENT_PURPOSES.WALLET_TOPUP) {
@@ -54,8 +60,8 @@ const buildCheckoutPayload = (payment, user = null) => ({
 });
 
 /**
- * Create payment for WALLET_TOPUP | CREDIT_CHECK.
- * CREDIT_CHECK supports method: ONLINE | WALLET | COINS
+ * Create payment for WALLET_TOPUP | CREDIT_CHECK | MANDATE_CREATE.
+ * CREDIT_CHECK / MANDATE_CREATE support method: ONLINE | WALLET | COINS
  */
 exports.createPayment = async (userId, body = {}) => {
     const purpose = String(body.purpose || "").toUpperCase();
@@ -69,6 +75,10 @@ exports.createPayment = async (userId, body = {}) => {
 
     if (purpose === PAYMENT_PURPOSES.CREDIT_CHECK) {
         return createCreditCheckPayment(userId, body);
+    }
+
+    if (purpose === PAYMENT_PURPOSES.MANDATE_CREATE) {
+        return createMandateCreatePayment(userId, body);
     }
 
     return createOnlinePayment(userId, purpose, body);
@@ -220,6 +230,155 @@ const createCreditCheckPayment = async (userId, body = {}) => {
     }
 };
 
+const createMandateCreatePayment = async (userId, body = {}) => {
+    const { MANDATE_CREATE_METHODS } = mandateCreateFeeService;
+    const method = String(body.method || MANDATE_CREATE_METHODS.ONLINE)
+        .trim()
+        .toUpperCase();
+
+    if (!Object.values(MANDATE_CREATE_METHODS).includes(method)) {
+        throw new ApiError(
+            400,
+            `method must be one of: ${Object.values(MANDATE_CREATE_METHODS).join(", ")}`
+        );
+    }
+
+    const fee = await mandateCreateFeeService.getMandateCreateFeeSetting();
+    if (!fee.enabled) {
+        throw new ApiError(
+            400,
+            "Mandate create payments are currently disabled"
+        );
+    }
+
+    const amount = fee.amount;
+    const description =
+        String(body.description || "").trim() ||
+        PURPOSE_LABELS[PAYMENT_PURPOSES.MANDATE_CREATE];
+
+    const baseMeta =
+        body.meta && typeof body.meta === "object" ? { ...body.meta } : {};
+
+    if (method === MANDATE_CREATE_METHODS.ONLINE) {
+        return createOnlinePayment(userId, PAYMENT_PURPOSES.MANDATE_CREATE, {
+            ...body,
+            description,
+            meta: { ...baseMeta, method },
+            _method: method,
+            _amount: amount,
+        });
+    }
+
+    if (method === MANDATE_CREATE_METHODS.WALLET) {
+        const walletService = require("../wallet/service");
+        const payment = await Payment.create({
+            user: userId,
+            purpose: PAYMENT_PURPOSES.MANDATE_CREATE,
+            method,
+            amount,
+            currency: "INR",
+            status: PAYMENT_STATUSES.CREATED,
+            description,
+            meta: {
+                ...baseMeta,
+                method,
+                paidVia: "WALLET",
+            },
+        });
+
+        try {
+            const result = await walletService.debitMoney(userId, {
+                amount,
+                description: `Mandate create — ${payment._id}`,
+                referenceId: String(payment._id),
+            });
+
+            payment.status = PAYMENT_STATUSES.PAID;
+            payment.paidAt = new Date();
+            payment.referenceType = "WALLET_TRANSACTION";
+            payment.referenceId = String(result.transaction?.id || "");
+            payment.meta = {
+                ...payment.meta,
+                walletTransactionId: String(result.transaction?.id || ""),
+            };
+            await payment.save();
+
+            return {
+                payment: formatPayment(payment),
+                method,
+                canCreateMandate: true,
+                wallet: result.wallet,
+                transaction: result.transaction,
+                message:
+                    "Wallet payment successful. Use paymentId with POST /api/mandates",
+            };
+        } catch (err) {
+            payment.status = PAYMENT_STATUSES.FAILED;
+            payment.failureReason = err.message || "Wallet debit failed";
+            await payment.save();
+            throw err;
+        }
+    }
+
+    // COINS
+    const coinService = require("../coins/service");
+    const coinsRequired = fee.coinsRequired;
+
+    const payment = await Payment.create({
+        user: userId,
+        purpose: PAYMENT_PURPOSES.MANDATE_CREATE,
+        method,
+        amount,
+        currency: "INR",
+        status: PAYMENT_STATUSES.CREATED,
+        description,
+        meta: {
+            ...baseMeta,
+            method,
+            paidVia: "COINS",
+            coinsRequired,
+            coinConversion: fee.coinConversion,
+            conversionLabel: fee.conversionLabel,
+        },
+    });
+
+    try {
+        const result = await coinService.debitCoins(userId, {
+            amount: coinsRequired,
+            description: `Mandate create — ${payment._id}`,
+            referenceId: String(payment._id),
+            source: "OTHER",
+        });
+
+        payment.status = PAYMENT_STATUSES.PAID;
+        payment.paidAt = new Date();
+        payment.referenceType = "COIN_TRANSACTION";
+        payment.referenceId = String(result.transaction?.id || "");
+        payment.meta = {
+            ...payment.meta,
+            coinsDebited: coinsRequired,
+            coinTransactionId: String(result.transaction?.id || ""),
+        };
+        await payment.save();
+
+        return {
+            payment: formatPayment(payment),
+            method,
+            canCreateMandate: true,
+            coins: result.wallet,
+            transaction: result.transaction,
+            coinsDebited: coinsRequired,
+            message:
+                "Coin payment successful. Use paymentId with POST /api/mandates",
+        };
+    } catch (err) {
+        payment.status = PAYMENT_STATUSES.FAILED;
+        payment.failureReason = err.message || "Coin debit failed";
+        await payment.save();
+        throw err;
+    }
+};
+
 const createOnlinePayment = async (userId, purpose, body = {}) => {
     const amount =
         body._amount !== undefined
@@ -312,9 +471,19 @@ const fulfillCreditCheck = async (payment) => {
     };
 };
 
+const fulfillMandateCreate = async (payment) => {
+    // Leave PAID — POST /mandates will consume this paymentId
+    return {
+        payment: formatPayment(payment),
+        canCreateMandate: true,
+        message: "Payment verified. Use paymentId with POST /api/mandates",
+    };
+};
+
 const FULFILLERS = {
     [PAYMENT_PURPOSES.WALLET_TOPUP]: fulfillWalletTopup,
     [PAYMENT_PURPOSES.CREDIT_CHECK]: fulfillCreditCheck,
+    [PAYMENT_PURPOSES.MANDATE_CREATE]: fulfillMandateCreate,
 };
 
 /**
@@ -348,6 +517,13 @@ exports.verifyPayment = async (userId, body = {}) => {
         if (payment.purpose === PAYMENT_PURPOSES.WALLET_TOPUP) {
             return {
                 payment: formatPayment(payment),
+                message: "Payment already verified",
+            };
+        }
+        if (payment.purpose === PAYMENT_PURPOSES.MANDATE_CREATE) {
+            return {
+                payment: formatPayment(payment),
+                canCreateMandate: payment.status === PAYMENT_STATUSES.PAID,
                 message: "Payment already verified",
             };
         }
@@ -393,10 +569,12 @@ exports.getPaymentById = async (userId, paymentId) => {
     return formatPayment(payment);
 };
 
-/**
- * Mark a PAID CREDIT_CHECK payment as CONSUMED (used once for report fetch).
- */
-exports.consumeCreditCheckPayment = async (userId, paymentId) => {
+const consumePurposePayment = async (
+    userId,
+    paymentId,
+    purpose,
+    notFoundMessage
+) => {
     if (!paymentId) {
         throw new ApiError(400, "paymentId is required");
     }
@@ -404,11 +582,11 @@ exports.consumeCreditCheckPayment = async (userId, paymentId) => {
     const payment = await Payment.findOne({
         _id: paymentId,
         user: userId,
-        purpose: PAYMENT_PURPOSES.CREDIT_CHECK,
+        purpose,
     });
 
     if (!payment) {
-        throw new ApiError(404, "Credit check payment not found");
+        throw new ApiError(404, notFoundMessage);
     }
 
     if (payment.status === PAYMENT_STATUSES.CONSUMED) {
@@ -422,12 +600,11 @@ exports.consumeCreditCheckPayment = async (userId, paymentId) => {
         );
     }
 
-    // Atomic claim
     const claimed = await Payment.findOneAndUpdate(
         {
             _id: payment._id,
             user: userId,
-            purpose: PAYMENT_PURPOSES.CREDIT_CHECK,
+            purpose,
             status: PAYMENT_STATUSES.PAID,
         },
         {
@@ -446,6 +623,28 @@ exports.consumeCreditCheckPayment = async (userId, paymentId) => {
     return claimed;
 };
 
+/**
+ * Mark a PAID CREDIT_CHECK payment as CONSUMED (used once for report fetch).
+ */
+exports.consumeCreditCheckPayment = async (userId, paymentId) =>
+    consumePurposePayment(
+        userId,
+        paymentId,
+        PAYMENT_PURPOSES.CREDIT_CHECK,
+        "Credit check payment not found"
+    );
+
+/**
+ * Mark a PAID MANDATE_CREATE payment as CONSUMED (used once for mandate create).
+ */
+exports.consumeMandateCreatePayment = async (userId, paymentId) =>
+    consumePurposePayment(
+        userId,
+        paymentId,
+        PAYMENT_PURPOSES.MANDATE_CREATE,
+        "Mandate create payment not found"
+    );
+
 exports.attachCreditReportReference = async (paymentId, reportId) => {
     if (!paymentId || !reportId) return;
     await Payment.updateOne(
@@ -454,6 +653,37 @@ exports.attachCreditReportReference = async (paymentId, reportId) => {
             $set: {
                 referenceType: "CREDIT_REPORT",
                 referenceId: String(reportId),
+            },
+        }
+    );
+};
+
+exports.attachMandateReference = async (paymentId, mandateId) => {
+    if (!paymentId || !mandateId) return;
+    await Payment.updateOne(
+        { _id: paymentId },
+        {
+            $set: {
+                referenceType: "MANDATE",
+                referenceId: String(mandateId),
+            },
+        }
+    );
+};
+
+/** Rollback CONSUMED → PAID when create/fetch failed before linking a resource. */
+exports.releaseConsumedPayment = async (paymentId) => {
+    if (!paymentId) return;
+    await Payment.updateOne(
+        {
+            _id: paymentId,
+            status: PAYMENT_STATUSES.CONSUMED,
+            referenceType: null,
+        },
+        {
+            $set: {
+                status: PAYMENT_STATUSES.PAID,
+                consumedAt: null,
             },
         }
     );

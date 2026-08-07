@@ -87,27 +87,73 @@ exports.resolveInstallment = async (idOrRpId, { userId = null } = {}) => {
 };
 
 exports.createMandate = async (userId, body, ipAddress) => {
-    await attachCustomerInstrument(userId, body);
+    const paymentService = require("../payments/service");
+    const mandateCreateFeeService = require("../payments/mandateCreateFee.service");
 
-    if (body.reference_id && typeof body.reference_id === "string") {
-        body.reference_id = body.reference_id.trim();
+    const fee = await mandateCreateFeeService.getMandateCreateFeeSetting();
+    const paymentId = body.paymentId || body.payment_id || null;
+
+    let claimedPayment = null;
+
+    try {
+        if (fee.enabled) {
+            claimedPayment = await paymentService.consumeMandateCreatePayment(
+                userId,
+                paymentId
+            );
+        }
+
+        // Strip payment fields — not sent to RocketPay
+        const rpBody = { ...body };
+        delete rpBody.paymentId;
+        delete rpBody.payment_id;
+
+        await attachCustomerInstrument(userId, rpBody);
+
+        if (rpBody.reference_id && typeof rpBody.reference_id === "string") {
+            rpBody.reference_id = rpBody.reference_id.trim();
+        }
+
+        if (!rpBody.reference_id) {
+            rpBody.reference_id = generateMandateReference(userId);
+        }
+
+        rpBody.reference_type = rpBody.reference_type
+            ? String(rpBody.reference_type).trim().toUpperCase()
+            : "MAIN";
+
+        const { data, synced } = await gateway.createMandate(rpBody, {
+            userId,
+            ipAddress,
+            source: "API",
+        });
+
+        if (claimedPayment?._id) {
+            await paymentService.attachMandateReference(
+                claimedPayment._id,
+                synced?._id || synced?.id
+            );
+        }
+
+        return {
+            mandate: formatMandate(synced),
+            rocketpay: data,
+            ...(claimedPayment
+                ? {
+                      payment: {
+                          id: String(claimedPayment._id),
+                          method: claimedPayment.method,
+                          amount: claimedPayment.amount,
+                      },
+                  }
+                : {}),
+        };
+    } catch (error) {
+        if (claimedPayment?._id) {
+            await paymentService.releaseConsumedPayment(claimedPayment._id);
+        }
+        throw error;
     }
-
-    if (!body.reference_id) {
-        body.reference_id = generateMandateReference(userId);
-    }
-
-    body.reference_type = body.reference_type
-        ? String(body.reference_type).trim().toUpperCase()
-        : "MAIN";
-
-    const { data, synced } = await gateway.createMandate(body, {
-        userId,
-        ipAddress,
-        source: "API",
-    });
-
-    return { mandate: formatMandate(synced), rocketpay: data };
 };
 
 exports.listMyMandates = async (userId, query = {}) => {

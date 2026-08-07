@@ -1,6 +1,7 @@
 const PAYMENT_PURPOSES = Object.freeze({
     WALLET_TOPUP: "WALLET_TOPUP",
     CREDIT_CHECK: "CREDIT_CHECK",
+    MANDATE_CREATE: "MANDATE_CREATE",
 });
 
 const PAYMENT_STATUSES = Object.freeze({
@@ -12,6 +13,7 @@ const PAYMENT_STATUSES = Object.freeze({
 
 const SETTING_KEYS = Object.freeze({
     CREDIT_CHECK_FEE: "CREDIT_CHECK_FEE",
+    MANDATE_CREATE_FEE: "MANDATE_CREATE_FEE",
 });
 
 module.exports = {

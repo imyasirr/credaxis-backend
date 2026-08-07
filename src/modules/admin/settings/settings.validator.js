@@ -26,6 +26,9 @@ exports.updateCreditCheckFee = [
         .withMessage("rupees must be greater than 0"),
 ];
 
+/** Same shape as credit-check fee */
+exports.updateMandateCreateFee = exports.updateCreditCheckFee;
+
 exports.updateFirstTopupBonus = [
     body("minAmount")
         .optional()

@@ -1,5 +1,6 @@
 const paymentService = require("./service");
 const creditCheckFeeService = require("./creditCheckFee.service");
+const mandateCreateFeeService = require("./mandateCreateFee.service");
 const asyncHandler = require("../../../utils/asyncHandler");
 const response = require("../../../utils/response");
 
@@ -24,4 +25,11 @@ exports.getPaymentById = asyncHandler(async (req, res) => {
 exports.getCreditCheckFee = asyncHandler(async (req, res) => {
     const data = await creditCheckFeeService.getCreditCheckQuote(req.user.id);
     return response.success(res, "Credit check fee fetched", data);
+});
+
+exports.getMandateCreateFee = asyncHandler(async (req, res) => {
+    const data = await mandateCreateFeeService.getMandateCreateQuote(
+        req.user.id
+    );
+    return response.success(res, "Mandate create fee fetched", data);
 });

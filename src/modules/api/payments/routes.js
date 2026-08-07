@@ -23,6 +23,9 @@ const requirePurposeAction = (req, _res, next) => {
     if (purpose === PAYMENT_PURPOSES.CREDIT_CHECK) {
         return requireAction(ACTIONS.CREDIT_FETCH)(req, _res, next);
     }
+    if (purpose === PAYMENT_PURPOSES.MANDATE_CREATE) {
+        return requireAction(ACTIONS.MANDATE_WRITE)(req, _res, next);
+    }
 
     return next(
         new ApiError(
@@ -38,6 +41,12 @@ router.get(
     controller.getCreditCheckFee
 );
 
+router.get(
+    "/mandate-create-fee",
+    requireAction(ACTIONS.MANDATE_READ, ACTIONS.MANDATE_WRITE),
+    controller.getMandateCreateFee
+);
+
 router.post(
     "/create",
     requirePurposeAction,
@@ -48,7 +57,11 @@ router.post(
 
 router.post(
     "/verify",
-    requireAction(ACTIONS.WALLET_WRITE, ACTIONS.CREDIT_FETCH),
+    requireAction(
+        ACTIONS.WALLET_WRITE,
+        ACTIONS.CREDIT_FETCH,
+        ACTIONS.MANDATE_WRITE
+    ),
     validator.verifyPayment,
     validate,
     controller.verifyPayment
@@ -56,7 +69,11 @@ router.post(
 
 router.get(
     "/:id",
-    requireAction(ACTIONS.WALLET_READ, ACTIONS.CREDIT_READ),
+    requireAction(
+        ACTIONS.WALLET_READ,
+        ACTIONS.CREDIT_READ,
+        ACTIONS.MANDATE_READ
+    ),
     validator.paymentId,
     validate,
     controller.getPaymentById

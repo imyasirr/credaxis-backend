@@ -348,6 +348,16 @@ router.put(
     adminSettingsController.updateCreditCheckFee
 );
 router.get(
+    "/settings/mandate-create-fee",
+    adminSettingsController.getMandateCreateFee
+);
+router.put(
+    "/settings/mandate-create-fee",
+    adminSettingsValidator.updateMandateCreateFee,
+    validate,
+    adminSettingsController.updateMandateCreateFee
+);
+router.get(
     "/settings/first-topup-bonus",
     adminSettingsController.getFirstTopupBonus
 );

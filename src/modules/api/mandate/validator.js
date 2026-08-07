@@ -110,6 +110,14 @@ exports.createMandate = [
     body("reference_id").optional().trim(),
     body("reference_type").optional().trim(),
     body("client_meta").optional().isObject(),
+    body("paymentId")
+        .optional({ nullable: true })
+        .isMongoId()
+        .withMessage("Invalid paymentId"),
+    body("payment_id")
+        .optional({ nullable: true })
+        .isMongoId()
+        .withMessage("Invalid payment_id"),
 ];
 
 exports.mandateId = [
