@@ -78,6 +78,12 @@ const userSchema = new mongoose.Schema(
             default: false,
         },
 
+        /** User app: mandate intro story seen / marked activated */
+        mandateStoryActivated: {
+            type: Boolean,
+            default: false,
+        },
+
         // Security
         failedLoginAttempts: {
             type: Number,

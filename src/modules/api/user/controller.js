@@ -74,3 +74,16 @@ exports.cancelDeletionRequest = asyncHandler(async (req, res) => {
     const data = await deletionService.cancelDeletionRequest(req.user.id);
     return response.success(res, "Deletion request cancelled", data);
 });
+
+exports.getMandateStory = asyncHandler(async (req, res) => {
+    const data = await service.getMandateStory(req.user.id);
+    return response.success(res, "Mandate story status fetched", data);
+});
+
+exports.setMandateStory = asyncHandler(async (req, res) => {
+    const data = await service.setMandateStory(
+        req.user.id,
+        req.body.activated
+    );
+    return response.success(res, "Mandate story status updated", data);
+});

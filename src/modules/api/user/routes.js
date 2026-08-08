@@ -83,4 +83,18 @@ router.delete(
     controller.cancelDeletionRequest
 );
 
+/** Mandate intro story — seen / activated flag */
+router.get(
+    "/mandate-story",
+    requireAction(ACTIONS.PROFILE_READ),
+    controller.getMandateStory
+);
+router.patch(
+    "/mandate-story",
+    requireAction(ACTIONS.PROFILE_WRITE),
+    validator.setMandateStory,
+    validate,
+    controller.setMandateStory
+);
+
 module.exports = router;

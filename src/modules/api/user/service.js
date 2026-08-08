@@ -338,3 +338,29 @@ exports.getDashboard = async (userId) => {
         referral,
     };
 };
+
+/** Mandate intro story: seen / activated flag on User */
+exports.getMandateStory = async (userId) => {
+    const user = await userRepository.findById(userId);
+    if (!user || user.isDeleted) {
+        throw new ApiError(404, "User not found");
+    }
+
+    return {
+        activated: Boolean(user.mandateStoryActivated),
+    };
+};
+
+exports.setMandateStory = async (userId, activated) => {
+    const user = await userRepository.findById(userId);
+    if (!user || user.isDeleted) {
+        throw new ApiError(404, "User not found");
+    }
+
+    user.mandateStoryActivated = Boolean(activated);
+    await user.save();
+
+    return {
+        activated: Boolean(user.mandateStoryActivated),
+    };
+};

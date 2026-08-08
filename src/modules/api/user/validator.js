@@ -70,3 +70,13 @@ exports.requestDeletion = [
         .isLength({ max: 500 })
         .withMessage("reason must be at most 500 characters"),
 ];
+
+exports.setMandateStory = [
+    body("activated")
+        .exists()
+        .withMessage("activated is required")
+        .bail()
+        .isBoolean()
+        .withMessage("activated must be true or false")
+        .toBoolean(),
+];
