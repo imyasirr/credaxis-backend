@@ -7,6 +7,15 @@ exports.complete = [
         .trim()
         .isLength({ min: 2, max: 50 }),
 
+    body("email")
+        .notEmpty()
+        .withMessage("Email is required")
+        .bail()
+        .trim()
+        .isEmail()
+        .withMessage("Valid email is required")
+        .normalizeEmail(),
+
     body("lastName").optional().trim().isLength({ max: 50 }),
 
     body("gender").optional().isIn(["MALE", "FEMALE", "OTHER"]),
@@ -30,6 +39,13 @@ exports.complete = [
 
 exports.update = [
     body("firstName").optional().trim().isLength({ min: 2, max: 50 }),
+
+    body("email")
+        .optional({ values: "falsy" })
+        .trim()
+        .isEmail()
+        .withMessage("Valid email is required")
+        .normalizeEmail(),
 
     body("lastName").optional().trim().isLength({ max: 50 }),
 

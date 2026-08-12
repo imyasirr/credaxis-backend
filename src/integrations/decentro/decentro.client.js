@@ -1,10 +1,6 @@
 const axios = require("axios");
 const ApiError = require("../../utils/ApiError");
 
-/**
- * Reusable Decentro HTTP client.
- * Credentials come from env — never hardcode secrets.
- */
 class DecentroClient {
     constructor() {
         this.baseURL =

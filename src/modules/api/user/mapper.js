@@ -52,6 +52,7 @@ exports.formatAuthUser = (
         lastName,
         fullName,
         mobile: user.mobile,
+        email: user.email || "",
         countryCode: user.countryCode || "+91",
         role: role?.name || role,
         status: user.status,

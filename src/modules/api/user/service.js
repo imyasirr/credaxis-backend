@@ -29,6 +29,45 @@ const buildProfileData = (body, avatarFile) => {
     return data;
 };
 
+/** Save email on User (not profile). Unique among active users. */
+const applyUserEmail = async (userId, emailRaw, { required = false } = {}) => {
+    const email = String(emailRaw || "")
+        .trim()
+        .toLowerCase();
+
+    if (!email) {
+        if (required) {
+            throw new ApiError(400, "Email is required to complete profile");
+        }
+        return null;
+    }
+
+    const user = await userRepository.findById(userId);
+    if (!user || user.isDeleted) {
+        throw new ApiError(404, "User not found");
+    }
+
+    if (user.email && String(user.email).toLowerCase() === email) {
+        return user.email;
+    }
+
+    const taken = await userRepository.findByEmail(email);
+    if (taken && String(taken._id) !== String(userId)) {
+        throw new ApiError(400, "Email is already in use");
+    }
+
+    user.email = email;
+    await user.save();
+    return user.email;
+};
+
+const withUserContact = (profile, user) => ({
+    ...formatProfile(profile),
+    mobile: user?.mobile || "",
+    email: user?.email || "",
+    countryCode: user?.countryCode || "+91",
+});
+
 exports.getMyProfile = async (userId) => {
     const profile = await profileRepository.findByUserId(userId);
     if (!profile) {
@@ -55,9 +94,7 @@ exports.getMyProfile = async (userId) => {
     );
 
     return {
-        ...formatProfile(profile),
-        mobile: user?.mobile || "",
-        countryCode: user?.countryCode || "+91",
+        ...withUserContact(profile, user),
         referral,
         kyc,
         partnerAccount,
@@ -78,11 +115,15 @@ exports.completeProfile = async (userId, body, avatarFile) => {
         throw new ApiError(400, "First name is required to complete profile");
     }
 
+    const email = await applyUserEmail(userId, body.email, { required: true });
+
     const data = buildProfileData(body, avatarFile);
     data.isProfileComplete = true;
 
     const updated = await profileRepository.updateByUserId(userId, data);
-    return formatProfile(updated);
+    const user = await userRepository.findById(userId);
+
+    return withUserContact(updated, { ...user?.toObject?.() || user, email });
 };
 
 exports.updateProfile = async (userId, body, avatarFile) => {
@@ -92,21 +133,36 @@ exports.updateProfile = async (userId, body, avatarFile) => {
     }
 
     const data = buildProfileData(body, avatarFile);
+    const hasEmail =
+        body.email !== undefined && String(body.email || "").trim() !== "";
 
     if (avatarFile && profile.avatar) {
         deleteAvatarFile(profile.avatar);
     }
 
-    if (Object.keys(data).length === 0) {
+    if (Object.keys(data).length === 0 && !hasEmail) {
         throw new ApiError(400, "No profile data provided");
+    }
+
+    let email = null;
+    if (hasEmail) {
+        email = await applyUserEmail(userId, body.email);
     }
 
     if (data.firstName || data.lastName) {
         data.isProfileComplete = true;
     }
 
-    const updated = await profileRepository.updateByUserId(userId, data);
-    return formatProfile(updated);
+    const updated =
+        Object.keys(data).length > 0
+            ? await profileRepository.updateByUserId(userId, data)
+            : profile;
+    const user = await userRepository.findById(userId);
+
+    return withUserContact(updated, {
+        ...(user?.toObject?.() || user || {}),
+        email: email || user?.email || "",
+    });
 };
 
 exports.deleteAvatar = async (userId) => {
@@ -124,7 +180,8 @@ exports.deleteAvatar = async (userId) => {
     const updated = await profileRepository.updateByUserId(userId, {
         avatar: null,
     });
-    return formatProfile(updated);
+    const user = await userRepository.findById(userId);
+    return withUserContact(updated, user);
 };
 
 exports.getMyReferralLink = async (userId, roleName) => {
