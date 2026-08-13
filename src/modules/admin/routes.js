@@ -5,6 +5,8 @@ const adminValidator = require("./auth/validator");
 
 const adminWalletController = require("./wallet/wallet.controller");
 const adminWalletValidator = require("./wallet/wallet.validator");
+const adminWithdrawalController = require("./wallet/withdrawal.controller");
+const adminWithdrawalValidator = require("./wallet/withdrawal.validator");
 
 const adminCoinsController = require("./coins/coins.controller");
 const adminCoinsValidator = require("./coins/coins.validator");
@@ -135,6 +137,54 @@ router.post(
     adminWalletController.adjustBalance
 );
 router.delete("/wallets/:id", adminWalletController.deleteWallet);
+
+router.get(
+    "/withdrawals",
+    adminWithdrawalValidator.list,
+    validate,
+    adminWithdrawalController.list
+);
+router.get(
+    "/withdrawals/:id",
+    adminWithdrawalValidator.withdrawalId,
+    validate,
+    adminWithdrawalController.getById
+);
+router.post(
+    "/withdrawals/:id/initiate",
+    adminWithdrawalValidator.withdrawalId,
+    adminWithdrawalValidator.initiate,
+    validate,
+    adminWithdrawalController.initiate
+);
+router.post(
+    "/withdrawals/:id/success",
+    adminWithdrawalValidator.withdrawalId,
+    adminWithdrawalValidator.markSuccess,
+    validate,
+    adminWithdrawalController.markSuccess
+);
+router.post(
+    "/withdrawals/:id/reject",
+    adminWithdrawalValidator.withdrawalId,
+    adminWithdrawalValidator.rejectOrFail,
+    validate,
+    adminWithdrawalController.reject
+);
+router.post(
+    "/withdrawals/:id/fail",
+    adminWithdrawalValidator.withdrawalId,
+    adminWithdrawalValidator.rejectOrFail,
+    validate,
+    adminWithdrawalController.markFailed
+);
+router.patch(
+    "/withdrawals/:id/expected-at",
+    adminWithdrawalValidator.withdrawalId,
+    adminWithdrawalValidator.updateExpected,
+    validate,
+    adminWithdrawalController.updateExpected
+);
 
 router.get("/coins", adminCoinsController.getCoinWallets);
 router.get("/coins/:id", adminCoinsController.getCoinWalletById);

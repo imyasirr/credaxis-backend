@@ -238,13 +238,9 @@ exports.updateWallet = async (walletId, body) => {
 
     if (body.holdBalance !== undefined) {
         const holdBalance = Math.max(0, Number(body.holdBalance));
-
-        if (holdBalance > wallet.availableBalance) {
-            throw new ApiError(400, "Hold balance cannot exceed available balance");
-        }
-
         wallet.holdBalance = holdBalance;
-        wallet.totalBalance = wallet.availableBalance;
+        wallet.totalBalance =
+            Number(wallet.availableBalance || 0) + holdBalance;
     }
 
     await wallet.save();
@@ -313,11 +309,8 @@ exports.adjustBalance = async (walletId, { type, amount, description }) => {
         }
 
         wallet.availableBalance = closingBalance;
-        wallet.totalBalance = closingBalance;
-
-        if (wallet.holdBalance > closingBalance) {
-            wallet.holdBalance = closingBalance;
-        }
+        wallet.totalBalance =
+            Number(closingBalance || 0) + Number(wallet.holdBalance || 0);
 
         await wallet.save({ session });
 

@@ -1,4 +1,8 @@
-const { body } = require("express-validator");
+const { body, param, query } = require("express-validator");
+const {
+    DESTINATION_TYPES,
+    WITHDRAWAL_STATUSES,
+} = require("./withdrawalRequest.model");
 
 exports.addMoney = [
     body("amount")
@@ -63,4 +67,34 @@ exports.updateBeneficiary = [
     body("ifscCode").optional().trim().isLength({ min: 11, max: 11 }),
     body("mobile").optional().isLength({ min: 10, max: 10 }),
     body("nickname").optional().trim().isLength({ max: 50 }),
+];
+
+exports.createWithdrawal = [
+    body("amount")
+        .isFloat({ min: 10 })
+        .withMessage("Amount must be at least ₹10"),
+    body("destinationType")
+        .trim()
+        .toUpperCase()
+        .isIn(Object.values(DESTINATION_TYPES))
+        .withMessage(
+            `destinationType must be one of: ${Object.values(DESTINATION_TYPES).join(", ")}`
+        ),
+    body("destinationId")
+        .isMongoId()
+        .withMessage("destinationId must be a valid id"),
+];
+
+exports.listWithdrawals = [
+    query("page").optional().isInt({ min: 1 }),
+    query("limit").optional().isInt({ min: 1, max: 50 }),
+    query("status")
+        .optional()
+        .trim()
+        .toUpperCase()
+        .isIn(Object.values(WITHDRAWAL_STATUSES)),
+];
+
+exports.withdrawalId = [
+    param("id").isMongoId().withMessage("Invalid withdrawal id"),
 ];

@@ -179,7 +179,9 @@ exports.creditAfterOnlinePayment = async (
         const closingBalance = openingBalance + creditAmount;
 
         wallet.availableBalance = closingBalance;
-        wallet.totalBalance = closingBalance;
+        wallet.totalBalance =
+            Number(wallet.availableBalance || 0) +
+            Number(wallet.holdBalance || 0);
         await wallet.save({ session });
 
         const transaction = await transactionRepository.create(
@@ -272,7 +274,9 @@ exports.creditMoney = async (
         const closingBalance = openingBalance + creditAmount;
 
         wallet.availableBalance = closingBalance;
-        wallet.totalBalance = closingBalance;
+        wallet.totalBalance =
+            Number(wallet.availableBalance || 0) +
+            Number(wallet.holdBalance || 0);
         await wallet.save({ session });
 
         const transaction = await transactionRepository.create(
@@ -365,7 +369,9 @@ exports.debitMoney = async (
         const closingBalance = openingBalance - debitAmount;
 
         wallet.availableBalance = closingBalance;
-        wallet.totalBalance = closingBalance;
+        wallet.totalBalance =
+            Number(wallet.availableBalance || 0) +
+            Number(wallet.holdBalance || 0);
         await wallet.save({ session });
 
         const transaction = await transactionRepository.create(

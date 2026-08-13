@@ -61,4 +61,39 @@ router.delete(
     walletController.deleteBeneficiary
 );
 
+/** Withdrawals — before any future /:id catch-alls */
+router.get(
+    "/withdraw/destinations",
+    requireAction(ACTIONS.WALLET_READ),
+    walletController.getWithdrawDestinations
+);
+router.post(
+    "/withdraw",
+    requireAction(ACTIONS.WALLET_WRITE),
+    walletValidator.createWithdrawal,
+    validate,
+    walletController.createWithdrawal
+);
+router.get(
+    "/withdrawals",
+    requireAction(ACTIONS.WALLET_READ),
+    walletValidator.listWithdrawals,
+    validate,
+    walletController.listMyWithdrawals
+);
+router.get(
+    "/withdrawals/:id",
+    requireAction(ACTIONS.WALLET_READ),
+    walletValidator.withdrawalId,
+    validate,
+    walletController.getMyWithdrawalById
+);
+router.post(
+    "/withdrawals/:id/cancel",
+    requireAction(ACTIONS.WALLET_WRITE),
+    walletValidator.withdrawalId,
+    validate,
+    walletController.cancelMyWithdrawal
+);
+
 module.exports = router;
