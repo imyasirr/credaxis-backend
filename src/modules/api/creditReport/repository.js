@@ -10,6 +10,62 @@ class CreditReportRepository extends BaseRepository {
         return this.findOne({ referenceId });
     }
 
+    /**
+     * Same subject for a checklist owner + same bureau/provider.
+     * Match: user + pan + mobile + provider (name preferred when several).
+     * userId null → external/admin checks with no linked user.
+     * Different providers never overwrite each other.
+     */
+    async findBySubjectIdentity({
+        pan,
+        mobile,
+        name,
+        userId = null,
+        provider = "EQUIFAX",
+    }) {
+        const filter = {
+            pan: String(pan || "")
+                .trim()
+                .toUpperCase(),
+            mobile: String(mobile || "").trim(),
+            provider: String(provider || "EQUIFAX")
+                .trim()
+                .toUpperCase(),
+        };
+
+        if (userId) {
+            filter.user = userId;
+        } else {
+            filter.$or = [{ user: null }, { user: { $exists: false } }];
+        }
+
+        const candidates = await this.model
+            .find(filter)
+            .sort({ updatedAt: -1 })
+            .limit(30);
+
+        if (!candidates.length) return null;
+
+        const key = String(name || "")
+            .trim()
+            .replace(/\s+/g, " ")
+            .toUpperCase();
+
+        if (key) {
+            const nameMatch = candidates.find((doc) => {
+                const docKey = String(doc.name || "")
+                    .trim()
+                    .replace(/\s+/g, " ")
+                    .toUpperCase();
+                return docKey === key;
+            });
+            if (nameMatch) return nameMatch;
+        }
+
+        // Same user + PAN + mobile + provider → one subject per bureau
+        return candidates[0];
+    }
+
     findAdminById(id) {
         return this.model
             .findById(id)

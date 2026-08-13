@@ -153,9 +153,10 @@ exports.callRocketPay = async ({
     }
 
     let synced = null;
-    if (status === "SUCCESS" && typeof sync === "function" && responseData) {
+    // DELETE may return 204 / empty body — still run sync so callers can soft-delete locally
+    if (status === "SUCCESS" && typeof sync === "function") {
         try {
-            synced = await sync(responseData);
+            synced = await sync(responseData ?? null);
         } catch (syncErr) {
             console.error(
                 `RocketPay sync after ${apiName} failed:`,
@@ -261,11 +262,26 @@ exports.deleteMandate = (mandateId, ctx) =>
         userId: ctx.userId,
         ipAddress: ctx.ipAddress,
         invoke: () => rocketpayClient.deleteMandate(mandateId),
-        sync: async (data) =>
-            syncMandateFromRocketPay(data, {
-                userId: ctx.userId,
-                source: ctx.source || "API",
-            }),
+        sync: async (data) => {
+            const entity = data?.id ? data : data?.data?.id ? data.data : null;
+            if (entity?.id) {
+                return syncMandateFromRocketPay(
+                    { ...entity, deleted: true },
+                    {
+                        userId: ctx.userId,
+                        source: ctx.source || "API",
+                    }
+                );
+            }
+
+            // Empty DELETE body — mark existing local row deleted without wiping fields
+            const Mandate = require("./mandate.model");
+            return Mandate.findOneAndUpdate(
+                { rocketpayId: String(mandateId) },
+                { $set: { deleted: true, lastSyncedAt: new Date() } },
+                { new: true }
+            );
+        },
     });
 
 exports.cancelMandate = (mandateId, ctx) =>
@@ -339,11 +355,13 @@ exports.listInstallments = (mandateId, ctx) =>
         sync: async (data) => {
             const list = Array.isArray(data)
                 ? data
-                : Array.isArray(data?.data)
-                    ? data.data
-                    : Array.isArray(data?.installments)
-                        ? data.installments
-                        : [];
+                : Array.isArray(data?.items)
+                    ? data.items
+                    : Array.isArray(data?.data)
+                        ? data.data
+                        : Array.isArray(data?.installments)
+                            ? data.installments
+                            : [];
             const synced = [];
             for (const item of list) {
                 const doc = await syncInstallmentFromRocketPay(item, {

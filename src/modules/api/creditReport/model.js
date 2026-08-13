@@ -150,5 +150,6 @@ const creditReportSchema = new mongoose.Schema(
 creditReportSchema.index({ user: 1, createdAt: -1 });
 creditReportSchema.index({ status: 1, createdAt: -1 });
 creditReportSchema.index({ pan: 1, mobile: 1 });
+creditReportSchema.index({ user: 1, pan: 1, mobile: 1, provider: 1 });
 
 module.exports = mongoose.model("CreditReport", creditReportSchema);

@@ -160,7 +160,7 @@ exports.listMyMandates = async (userId, query = {}) => {
     const page = Number(query.page) || 1;
     const limit = Math.min(Number(query.limit) || 20, 100);
     const skip = (page - 1) * limit;
-    const filter = { user: userId };
+    const filter = { user: userId, deleted: { $ne: true } };
 
     if (query.state) filter.state = String(query.state).toUpperCase();
     if (query.frequency) {
@@ -225,7 +225,9 @@ exports.deleteMandate = async (userId, id, ipAddress) => {
     if (local.state !== "CREATED") {
         throw new ApiError(
             400,
-            "Delete is only allowed when mandate is in CREATED state"
+            local.state === "ACTIVATED"
+                ? "Activated mandates cannot be deleted. Use POST /api/mandates/:id/cancel"
+                : "Delete is only allowed when mandate is in CREATED state"
         );
     }
     const { data, synced } = await gateway.deleteMandate(local.rocketpayId, {
@@ -233,7 +235,17 @@ exports.deleteMandate = async (userId, id, ipAddress) => {
         ipAddress,
         source: "API",
     });
-    return { mandate: formatMandate(synced), rocketpay: data };
+
+    // Safety: always soft-delete locally even if RocketPay body/sync was empty
+    let mandateDoc = synced;
+    if (!mandateDoc?.deleted) {
+        local.deleted = true;
+        local.lastSyncedAt = new Date();
+        await local.save();
+        mandateDoc = local;
+    }
+
+    return { mandate: formatMandate(mandateDoc), rocketpay: data };
 };
 
 exports.cancelMandate = async (userId, id, ipAddress) => {
@@ -272,6 +284,38 @@ exports.listInstallments = async (userId, mandateId, ipAddress, query = {}) => {
     const local = await exports.resolveMandate(mandateId, { userId });
     const fromRemote = query.sync === "true" || query.sync === "1";
 
+    const buildLocalResult = async () => {
+        const page = Number(query.page) || 1;
+        const limit = Math.min(Number(query.limit) || 50, 100);
+        const skip = (page - 1) * limit;
+        const filter = {
+            $or: [
+                { mandate: local._id },
+                { rocketpayMandateId: local.rocketpayId },
+            ],
+            user: userId,
+        };
+        if (query.state) filter.state = String(query.state).toUpperCase();
+
+        const [items, total] = await Promise.all([
+            Installment.find(filter)
+                .sort({ dueDate: 1, createdAt: -1 })
+                .skip(skip)
+                .limit(limit),
+            Installment.countDocuments(filter),
+        ]);
+
+        return {
+            installments: items.map(formatInstallment),
+            pagination: {
+                page,
+                limit,
+                total,
+                totalPages: Math.ceil(total / limit) || 0,
+            },
+        };
+    };
+
     if (fromRemote) {
         const { data, synced } = await gateway.listInstallments(
             local.rocketpayId,
@@ -285,35 +329,28 @@ exports.listInstallments = async (userId, mandateId, ipAddress, query = {}) => {
         };
     }
 
-    const page = Number(query.page) || 1;
-    const limit = Math.min(Number(query.limit) || 50, 100);
-    const skip = (page - 1) * limit;
-    const filter = {
-        $or: [
-            { mandate: local._id },
-            { rocketpayMandateId: local.rocketpayId },
-        ],
-        user: userId,
-    };
-    if (query.state) filter.state = String(query.state).toUpperCase();
+    const localResult = await buildLocalResult();
 
-    const [items, total] = await Promise.all([
-        Installment.find(filter)
-            .sort({ dueDate: 1, createdAt: -1 })
-            .skip(skip)
-            .limit(limit),
-        Installment.countDocuments(filter),
-    ]);
+    // Mandate pe installmentCount hai lekin local empty → RocketPay se pull
+    if (
+        localResult.pagination.total === 0 &&
+        Number(local.installmentCount) > 0 &&
+        local.rocketpayId
+    ) {
+        const { data, synced } = await gateway.listInstallments(
+            local.rocketpayId,
+            { userId, ipAddress, source: "API" }
+        );
+        if (Array.isArray(synced) && synced.length > 0) {
+            return {
+                installments: synced.map(formatInstallment),
+                rocketpay: data,
+                syncedFromRocketPay: true,
+            };
+        }
+    }
 
-    return {
-        installments: items.map(formatInstallment),
-        pagination: {
-            page,
-            limit,
-            total,
-            totalPages: Math.ceil(total / limit) || 0,
-        },
-    };
+    return localResult;
 };
 
 exports.getInstallment = async (userId, id, ipAddress, { refresh = false } = {}) => {

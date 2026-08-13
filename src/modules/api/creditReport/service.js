@@ -208,16 +208,23 @@ const extractIndexedFields = (raw, fallback = {}) => {
 const buildReferenceId = () =>
     `CX-${Date.now()}-${randomUUID().replace(/-/g, "").slice(0, 12)}`;
 
+const normalizePersonName = (name) =>
+    String(name || "")
+        .trim()
+        .replace(/\s+/g, " ");
+
 /**
  * Reusable Decentro Equifax credit report fetch.
  * Client fields: name, email, pan, mobile only.
- * Saves raw JSON + indexed fields + optional PDF.
+ * Same checklist user + PAN + mobile + provider updates that bureau's doc only —
+ * another bureau's report for the same person is never overwritten.
  */
 exports.fetchCreditReportSummary = async ({
     userId = null,
     checkedBy = null,
     source = "USER",
     subjectType = "SELF",
+    provider = "EQUIFAX",
     name,
     mobile,
     email = null,
@@ -231,12 +238,15 @@ exports.fetchCreditReportSummary = async ({
         throw new ApiError(400, "Consent must be true to fetch credit report");
     }
 
-    const cleanName = String(name || "").trim();
+    const cleanName = normalizePersonName(name);
     const cleanMobile = String(mobile || "").trim();
     const cleanEmail = String(email || "")
         .trim()
         .toLowerCase();
     const cleanPan = String(pan || "")
+        .trim()
+        .toUpperCase();
+    const cleanProvider = String(provider || "EQUIFAX")
         .trim()
         .toUpperCase();
 
@@ -253,10 +263,23 @@ exports.fetchCreditReportSummary = async ({
         throw new ApiError(400, "Valid PAN is required");
     }
 
+    const existingSubject =
+        await creditReportRepository.findBySubjectIdentity({
+            pan: cleanPan,
+            mobile: cleanMobile,
+            name: cleanName,
+            userId: userId || null,
+            provider: cleanProvider,
+        });
+
     const refId = referenceId || buildReferenceId();
 
-    const existing = await creditReportRepository.findByReferenceId(refId);
-    if (existing) {
+    const existingRef = await creditReportRepository.findByReferenceId(refId);
+    if (
+        existingRef &&
+        (!existingSubject ||
+            String(existingRef._id) !== String(existingSubject._id))
+    ) {
         throw new ApiError(400, "Duplicate reference_id");
     }
 
@@ -288,20 +311,60 @@ exports.fetchCreditReportSummary = async ({
         consent: true,
     };
 
-    const record = await creditReportRepository.create({
-        user: userId || null,
-        checkedBy: checkedBy || null,
-        source: source === "ADMIN" ? "ADMIN" : "USER",
-        subjectType: subjectType === "OTHER" ? "OTHER" : "SELF",
-        referenceId: refId,
-        provider: "EQUIFAX",
-        status: "PENDING",
-        name: cleanName,
-        mobile: cleanMobile,
-        email: cleanEmail,
-        pan: cleanPan,
-        requestPayload,
-    });
+    const resolvedSource = source === "ADMIN" ? "ADMIN" : "USER";
+    const resolvedSubjectType =
+        subjectType === "OTHER" ? "OTHER" : "SELF";
+
+    let record = existingSubject;
+    if (record) {
+        if (record.pdfPath) {
+            deleteUploadFile(record.pdfPath);
+        }
+        record.checkedBy = checkedBy || record.checkedBy || null;
+        if (userId) {
+            record.user = userId;
+        }
+        // Keep SELF if this was already the owner's own report
+        if (!(record.subjectType === "SELF" && resolvedSubjectType === "OTHER")) {
+            record.subjectType = resolvedSubjectType;
+        }
+        if (resolvedSource === "ADMIN" || !record.source) {
+            record.source = resolvedSource;
+        }
+        record.referenceId = refId;
+        record.provider = cleanProvider;
+        record.status = "PENDING";
+        record.name = cleanName;
+        record.mobile = cleanMobile;
+        record.email = cleanEmail;
+        record.pan = cleanPan;
+        record.requestPayload = requestPayload;
+        record.score = null;
+        record.scoreName = null;
+        record.decentroTxnId = null;
+        record.responseKey = null;
+        record.message = null;
+        record.pdfPath = null;
+        record.rawResponse = null;
+        record.errorCode = null;
+        record.errorMessage = null;
+        await record.save();
+    } else {
+        record = await creditReportRepository.create({
+            user: userId || null,
+            checkedBy: checkedBy || null,
+            source: resolvedSource,
+            subjectType: resolvedSubjectType,
+            referenceId: refId,
+            provider: cleanProvider,
+            status: "PENDING",
+            name: cleanName,
+            mobile: cleanMobile,
+            email: cleanEmail,
+            pan: cleanPan,
+            requestPayload,
+        });
+    }
 
     const { statusCode, data: raw } = await decentroClient.post(
         CREDIT_REPORT_PATH,
@@ -400,7 +463,9 @@ exports.fetchCreditReportSummary = async ({
         type: "SUCCESS",
     });
 
-    return formatCreditReport(record, { includeRaw: true });
+    const formatted = formatCreditReport(record, { includeRaw: true });
+    formatted.updated = Boolean(existingSubject);
+    return formatted;
 };
 
 /**

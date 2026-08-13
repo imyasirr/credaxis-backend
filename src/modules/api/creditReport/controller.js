@@ -4,7 +4,10 @@ const response = require("../../../utils/response");
 
 exports.fetchMyCreditReport = asyncHandler(async (req, res) => {
     const data = await creditReportService.fetchForUser(req.user.id, req.body);
-    return response.success(res, "Credit report fetched successfully", data, 201);
+    const message = data?.updated
+        ? "Credit report updated successfully"
+        : "Credit report fetched successfully";
+    return response.success(res, message, data, data?.updated ? 200 : 201);
 });
 
 exports.getMyReports = asyncHandler(async (req, res) => {
@@ -27,12 +30,10 @@ exports.getMyReportById = asyncHandler(async (req, res) => {
 
 exports.adminFetch = asyncHandler(async (req, res) => {
     const data = await creditReportService.fetchByAdmin(req.user.id, req.body);
-    return response.success(
-        res,
-        "Credit report fetched successfully",
-        data,
-        201
-    );
+    const message = data?.updated
+        ? "Credit report updated successfully"
+        : "Credit report fetched successfully";
+    return response.success(res, message, data, data?.updated ? 200 : 201);
 });
 
 exports.adminList = asyncHandler(async (req, res) => {
