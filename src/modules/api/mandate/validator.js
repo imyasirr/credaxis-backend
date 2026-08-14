@@ -1,5 +1,12 @@
 const { body, param, query } = require("express-validator");
-const { MANDATE_FREQUENCIES, MANDATE_STATES, MODES } = require("./constants");
+const {
+    MANDATE_FREQUENCIES,
+    MANDATE_STATES,
+    INSTALLMENT_STATES,
+    MODES,
+} = require("./constants");
+
+const RECURRING = ["DAILY", "WEEKLY", "MONTHLY", "YEARLY"];
 
 exports.createMandate = [
     body("customer").isObject().withMessage("customer is required"),
@@ -7,10 +14,7 @@ exports.createMandate = [
         .trim()
         .notEmpty()
         .withMessage("customer.mobile_number is required"),
-    body("customer.name")
-        .optional()
-        .trim()
-        .isLength({ max: 200 }),
+    body("customer.name").optional().trim().isLength({ max: 200 }),
     body("customer.instrument")
         .optional()
         .isObject()
@@ -83,9 +87,7 @@ exports.createMandate = [
         .toUpperCase()
         .isIn(MODES)
         .withMessage(`mode must be one of: ${MODES.join(", ")}`),
-    body("schedule")
-        .isObject()
-        .withMessage("schedule is required"),
+    body("schedule").isObject().withMessage("schedule is required"),
     body("schedule.frequency")
         .trim()
         .toUpperCase()
@@ -107,6 +109,41 @@ exports.createMandate = [
         .withMessage("end_date must be YYYY-MM-DD"),
     body("schedule.approval_amount").optional().isFloat({ min: 0 }),
     body("schedule.items").optional().isArray(),
+    body("schedule").custom((schedule) => {
+        const frequency = String(schedule?.frequency || "")
+            .trim()
+            .toUpperCase();
+        const amount = Number(schedule?.amount);
+        const approval = Number(schedule?.approval_amount);
+        const hasAmount =
+            (Number.isFinite(amount) && amount > 0) ||
+            (Number.isFinite(approval) && approval > 0);
+
+        if (!hasAmount) {
+            throw new Error(
+                "schedule.amount or schedule.approval_amount (> 0) is required"
+            );
+        }
+
+        if (RECURRING.includes(frequency)) {
+            const count = Number(schedule?.installment_count);
+            if (!Number.isInteger(count) || count < 1) {
+                throw new Error(
+                    "schedule.installment_count (>= 1) is required for recurring mandates"
+                );
+            }
+            if (
+                !schedule?.start_date ||
+                !/^\d{4}-\d{2}-\d{2}$/.test(String(schedule.start_date))
+            ) {
+                throw new Error(
+                    "schedule.start_date (YYYY-MM-DD) is required for recurring mandates"
+                );
+            }
+        }
+
+        return true;
+    }),
     body("reference_id").optional().trim(),
     body("reference_type").optional().trim(),
     body("client_meta").optional().isObject(),
@@ -131,11 +168,7 @@ exports.installmentId = [
 exports.listMandates = [
     query("page").optional().isInt({ min: 1 }),
     query("limit").optional().isInt({ min: 1, max: 100 }),
-    query("state")
-        .optional()
-        .trim()
-        .toUpperCase()
-        .isIn(MANDATE_STATES),
+    query("state").optional().trim().toUpperCase().isIn(MANDATE_STATES),
     query("frequency")
         .optional()
         .trim()
@@ -145,13 +178,17 @@ exports.listMandates = [
 ];
 
 exports.listInstallments = [
-    query("mandate_id")
-        .trim()
-        .notEmpty()
-        .withMessage("mandate_id is required"),
+    query("mandate_id").trim().notEmpty().withMessage("mandate_id is required"),
     query("page").optional().isInt({ min: 1 }),
     query("limit").optional().isInt({ min: 1, max: 100 }),
-    query("state").optional().trim(),
+    query("state")
+        .optional()
+        .trim()
+        .toUpperCase()
+        .isIn(INSTALLMENT_STATES)
+        .withMessage(
+            `state must be one of: ${INSTALLMENT_STATES.join(", ")}`
+        ),
     query("sync").optional().isIn(["true", "false", "1", "0"]),
 ];
 
@@ -164,6 +201,14 @@ exports.createInstallment = [
         .withMessage("due_date must be YYYY-MM-DD"),
     body("reference_id").optional().trim(),
     body("description").optional().trim(),
+    body("paymentId")
+        .optional({ nullable: true })
+        .isMongoId()
+        .withMessage("Invalid paymentId"),
+    body("payment_id")
+        .optional({ nullable: true })
+        .isMongoId()
+        .withMessage("Invalid payment_id"),
 ];
 
 exports.retryInstallment = [

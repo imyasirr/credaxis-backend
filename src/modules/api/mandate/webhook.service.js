@@ -57,12 +57,21 @@ exports.handleWebhook = async (req) => {
                 source: "WEBHOOK",
             });
             log.mandate = mandate?._id || null;
+            if (!mandate) {
+                log.processError = "Mandate sync returned null (missing id)";
+            }
         } else if (entityType === "INSTALLMENT") {
             const installment = await syncInstallmentFromRocketPay(payload, {
                 source: "WEBHOOK",
             });
             log.installment = installment?._id || null;
             log.mandate = installment?.mandate || null;
+            if (!installment) {
+                log.processError =
+                    "Installment sync returned null (missing id)";
+            }
+        } else {
+            log.processError = "Skipped UNKNOWN entity (not mandate/installment)";
         }
 
         log.processed = true;
@@ -71,7 +80,8 @@ exports.handleWebhook = async (req) => {
         log.processError = err.message;
         log.processed = false;
         await log.save();
-        throw new ApiError(500, `Webhook processing failed: ${err.message}`);
+        // Ack 200 so RocketPay does not hammer retries; ops can replay from logs
+        console.error("[RocketPay webhook] processing failed:", err.message);
     }
 
     return {

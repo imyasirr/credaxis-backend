@@ -40,7 +40,7 @@ function extractMandateAuth(meta, checkoutUrlFallback) {
 
 exports.extractMandateAuth = extractMandateAuth;
 
-exports.formatMandate = (doc) => {
+exports.formatMandate = (doc, { includeRaw = false } = {}) => {
     if (!doc) return null;
     const data = doc.toObject ? doc.toObject() : doc;
     const auth = extractMandateAuth(data.meta, data.checkoutUrl);
@@ -98,13 +98,13 @@ exports.formatMandate = (doc) => {
                   }
                 : { id: data.user }
             : null,
-        raw: data.raw,
+        ...(includeRaw ? { raw: data.raw } : {}),
         createdAt: data.createdAt,
         updatedAt: data.updatedAt,
     };
 };
 
-exports.formatInstallment = (doc) => {
+exports.formatInstallment = (doc, { includeRaw = false } = {}) => {
     if (!doc) return null;
     const data = doc.toObject ? doc.toObject() : doc;
 
@@ -139,7 +139,7 @@ exports.formatInstallment = (doc) => {
                   }
                 : { id: data.user }
             : null,
-        raw: data.raw,
+        ...(includeRaw ? { raw: data.raw } : {}),
         createdAt: data.createdAt,
         updatedAt: data.updatedAt,
     };

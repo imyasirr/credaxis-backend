@@ -71,6 +71,11 @@ const installmentSchema = new mongoose.Schema(
             enum: ["API", "WEBHOOK", "ADMIN", "SYSTEM"],
             default: "API",
         },
+
+        sms: {
+            collectionSentAt: { type: Date, default: null },
+            settlementSentAt: { type: Date, default: null },
+        },
     },
     {
         timestamps: true,

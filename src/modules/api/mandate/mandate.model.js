@@ -108,6 +108,11 @@ const mandateSchema = new mongoose.Schema(
             enum: ["API", "WEBHOOK", "ADMIN", "SYSTEM"],
             default: "API",
         },
+
+        /** Dedupe flags — set after a successful SMS attempt for that event */
+        sms: {
+            activatedSentAt: { type: Date, default: null },
+        },
     },
     {
         timestamps: true,

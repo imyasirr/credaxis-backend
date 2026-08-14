@@ -13,6 +13,29 @@ const GENERIC_ROCKETPAY_ERRORS = new Set([
     "server_error",
 ]);
 
+/** RocketPay sometimes wraps the entity as `{ data: { id, ... } }`. */
+const unwrapEntity = (payload) => {
+    if (!payload || typeof payload !== "object") return payload;
+    if (payload.id) return payload;
+    if (payload.data && typeof payload.data === "object" && payload.data.id) {
+        return payload.data;
+    }
+    return payload;
+};
+
+const unwrapList = (data) => {
+    const list = Array.isArray(data)
+        ? data
+        : Array.isArray(data?.items)
+          ? data.items
+          : Array.isArray(data?.data)
+            ? data.data
+            : Array.isArray(data?.installments)
+              ? data.installments
+              : [];
+    return list.map(unwrapEntity).filter((item) => item?.id);
+};
+
 const normalizeErrorPayload = (payload) => {
     if (!payload) return null;
     if (typeof payload === "string") return payload.trim() || null;
@@ -153,11 +176,17 @@ exports.callRocketPay = async ({
     }
 
     let synced = null;
+    let syncError = null;
     // DELETE may return 204 / empty body — still run sync so callers can soft-delete locally
     if (status === "SUCCESS" && typeof sync === "function") {
         try {
             synced = await sync(responseData ?? null);
         } catch (syncErr) {
+            syncError = syncErr;
+            status = "ERROR";
+            errorMessage =
+                syncErr.message ||
+                `Local sync failed after RocketPay ${apiName}`;
             console.error(
                 `RocketPay sync after ${apiName} failed:`,
                 syncErr.message
@@ -165,17 +194,18 @@ exports.callRocketPay = async ({
         }
     }
 
+    const entity = unwrapEntity(responseData) || responseData;
     const rpMandateId =
-        responseData?.mandate_id ||
+        entity?.mandate_id ||
         requestBody?.mandate_id ||
-        (responseData?.frequency || responseData?.approval_amount != null
-            ? responseData?.id
+        (entity?.frequency || entity?.approval_amount != null
+            ? entity?.id
             : null) ||
         null;
 
     const rpInstallmentId =
-        responseData?.mandate_id && responseData?.id
-            ? responseData.id
+        entity?.mandate_id && entity?.id
+            ? entity.id
             : requestBody?.installment_id || null;
 
     await writeApiLog({
@@ -185,7 +215,7 @@ exports.callRocketPay = async ({
         path,
         request: requestBody,
         response: responseData,
-        statusCode,
+        statusCode: syncError ? 502 : statusCode,
         status,
         ipAddress,
         error: errorMessage,
@@ -197,6 +227,12 @@ exports.callRocketPay = async ({
     });
 
     if (status !== "SUCCESS") {
+        if (syncError) {
+            throw new ApiError(
+                502,
+                `RocketPay succeeded but local sync failed: ${syncError.message}`
+            );
+        }
         throw new ApiError(statusCode >= 400 ? statusCode : 502, errorMessage);
     }
 
@@ -212,15 +248,23 @@ exports.createMandate = (body, ctx) =>
         userId: ctx.userId,
         ipAddress: ctx.ipAddress,
         invoke: () => rocketpayClient.createMandate(body),
-        sync: async (data) =>
-            syncMandateFromRocketPay(data, {
+        sync: async (data) => {
+            const entity = unwrapEntity(data);
+            if (!entity?.id) {
+                throw new ApiError(
+                    502,
+                    "RocketPay create mandate response missing entity id"
+                );
+            }
+            return syncMandateFromRocketPay(entity, {
                 userId: ctx.userId,
                 referenceId: body.reference_id || null,
                 schedule: body.schedule || null,
                 source: ctx.source || "API",
                 distributor: ctx.distributor || null,
                 clientMetaOverride: body.client_meta || null,
-            }),
+            });
+        },
     });
 
 exports.getMandate = (mandateId, ctx) =>
@@ -233,7 +277,7 @@ exports.getMandate = (mandateId, ctx) =>
         ipAddress: ctx.ipAddress,
         invoke: () => rocketpayClient.getMandate(mandateId),
         sync: async (data) =>
-            syncMandateFromRocketPay(data, {
+            syncMandateFromRocketPay(unwrapEntity(data), {
                 userId: ctx.userId,
                 source: ctx.source || "API",
             }),
@@ -249,7 +293,7 @@ exports.refreshMandate = (mandateId, ctx) =>
         ipAddress: ctx.ipAddress,
         invoke: () => rocketpayClient.refreshMandate(mandateId),
         sync: async (data) =>
-            syncMandateFromRocketPay(data, {
+            syncMandateFromRocketPay(unwrapEntity(data), {
                 userId: ctx.userId,
                 source: ctx.source || "API",
             }),
@@ -265,7 +309,7 @@ exports.deleteMandate = (mandateId, ctx) =>
         ipAddress: ctx.ipAddress,
         invoke: () => rocketpayClient.deleteMandate(mandateId),
         sync: async (data) => {
-            const entity = data?.id ? data : data?.data?.id ? data.data : null;
+            const entity = unwrapEntity(data);
             if (entity?.id) {
                 return syncMandateFromRocketPay(
                     { ...entity, deleted: true },
@@ -296,7 +340,7 @@ exports.cancelMandate = (mandateId, ctx) =>
         ipAddress: ctx.ipAddress,
         invoke: () => rocketpayClient.cancelMandate(mandateId),
         sync: async (data) =>
-            syncMandateFromRocketPay(data, {
+            syncMandateFromRocketPay(unwrapEntity(data), {
                 userId: ctx.userId,
                 source: ctx.source || "API",
             }),
@@ -312,11 +356,7 @@ exports.reconMandates = (body, ctx) =>
         ipAddress: ctx.ipAddress,
         invoke: () => rocketpayClient.reconMandates(body),
         sync: async (data) => {
-            const list = Array.isArray(data?.items)
-                ? data.items
-                : Array.isArray(data)
-                  ? data
-                  : [];
+            const list = unwrapList(data);
             const synced = [];
             for (const item of list) {
                 const doc = await syncMandateFromRocketPay(item, {
@@ -338,11 +378,19 @@ exports.createInstallment = (mandateId, body, ctx) =>
         userId: ctx.userId,
         ipAddress: ctx.ipAddress,
         invoke: () => rocketpayClient.createInstallment(mandateId, body),
-        sync: async (data) =>
-            syncInstallmentFromRocketPay(data, {
+        sync: async (data) => {
+            const entity = unwrapEntity(data);
+            if (!entity?.id) {
+                throw new ApiError(
+                    502,
+                    "RocketPay create installment response missing entity id"
+                );
+            }
+            return syncInstallmentFromRocketPay(entity, {
                 userId: ctx.userId,
                 source: ctx.source || "API",
-            }),
+            });
+        },
     });
 
 exports.listInstallments = (mandateId, ctx) =>
@@ -355,15 +403,7 @@ exports.listInstallments = (mandateId, ctx) =>
         ipAddress: ctx.ipAddress,
         invoke: () => rocketpayClient.listInstallments(mandateId),
         sync: async (data) => {
-            const list = Array.isArray(data)
-                ? data
-                : Array.isArray(data?.items)
-                    ? data.items
-                    : Array.isArray(data?.data)
-                        ? data.data
-                        : Array.isArray(data?.installments)
-                            ? data.installments
-                            : [];
+            const list = unwrapList(data);
             const synced = [];
             for (const item of list) {
                 const doc = await syncInstallmentFromRocketPay(item, {
@@ -386,7 +426,7 @@ exports.getInstallment = (installmentId, ctx) =>
         ipAddress: ctx.ipAddress,
         invoke: () => rocketpayClient.getInstallment(installmentId),
         sync: async (data) =>
-            syncInstallmentFromRocketPay(data, {
+            syncInstallmentFromRocketPay(unwrapEntity(data), {
                 userId: ctx.userId,
                 source: ctx.source || "API",
             }),
@@ -402,7 +442,7 @@ exports.refreshInstallment = (installmentId, ctx) =>
         ipAddress: ctx.ipAddress,
         invoke: () => rocketpayClient.refreshInstallment(installmentId),
         sync: async (data) =>
-            syncInstallmentFromRocketPay(data, {
+            syncInstallmentFromRocketPay(unwrapEntity(data), {
                 userId: ctx.userId,
                 source: ctx.source || "API",
             }),
@@ -418,7 +458,7 @@ exports.skipInstallment = (installmentId, ctx) =>
         ipAddress: ctx.ipAddress,
         invoke: () => rocketpayClient.skipInstallment(installmentId),
         sync: async (data) =>
-            syncInstallmentFromRocketPay(data, {
+            syncInstallmentFromRocketPay(unwrapEntity(data), {
                 userId: ctx.userId,
                 source: ctx.source || "API",
             }),
@@ -434,7 +474,7 @@ exports.retryInstallment = (installmentId, body, ctx) =>
         ipAddress: ctx.ipAddress,
         invoke: () => rocketpayClient.retryInstallment(installmentId, body),
         sync: async (data) =>
-            syncInstallmentFromRocketPay(data, {
+            syncInstallmentFromRocketPay(unwrapEntity(data), {
                 userId: ctx.userId,
                 source: ctx.source || "API",
             }),
@@ -450,11 +490,7 @@ exports.reconInstallments = (body, ctx) =>
         ipAddress: ctx.ipAddress,
         invoke: () => rocketpayClient.reconInstallments(body),
         sync: async (data) => {
-            const list = Array.isArray(data?.items)
-                ? data.items
-                : Array.isArray(data)
-                  ? data
-                  : [];
+            const list = unwrapList(data);
             const synced = [];
             for (const item of list) {
                 const doc = await syncInstallmentFromRocketPay(item, {

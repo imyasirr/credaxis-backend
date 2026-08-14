@@ -1,5 +1,6 @@
 const { body, param } = require("express-validator");
 const { PAYMENT_PURPOSES } = require("../../../integrations/razorpay/constants");
+const { MANDATE_FREQUENCIES } = require("../mandate/constants");
 
 exports.createPayment = [
     body("purpose")
@@ -21,7 +22,14 @@ exports.createPayment = [
         .withMessage("Amount must be at least ₹1"),
     body("description").optional().trim().isLength({ max: 200 }),
     body("meta").optional().isObject(),
-    body("frequency").optional().trim().toUpperCase(),
+    body("frequency")
+        .optional()
+        .trim()
+        .toUpperCase()
+        .isIn(MANDATE_FREQUENCIES)
+        .withMessage(
+            `frequency must be one of: ${MANDATE_FREQUENCIES.join(", ")}`
+        ),
     body("installment_count")
         .optional()
         .isInt({ min: 0 })

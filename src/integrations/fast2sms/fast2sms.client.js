@@ -19,22 +19,23 @@ class Fast2SmsClient {
         this.timeout = Number(process.env.FAST2SMS_TIMEOUT_MS) || 15000;
     }
 
-    assertConfigured() {
-        if (!this.apiKey || !this.senderId || !this.messageId) {
+    assertConfigured(messageId = this.messageId) {
+        if (!this.apiKey || !this.senderId || !messageId) {
             throw new ApiError(
                 500,
-                "Fast2SMS is not configured. Set FAST2SMS_API_KEY, FAST2SMS_SENDER_ID, FAST2SMS_DLT_MESSAGE_ID"
+                "Fast2SMS is not configured. Set FAST2SMS_API_KEY, FAST2SMS_SENDER_ID, and a DLT template id"
             );
         }
     }
 
     /**
      * Send DLT SMS with template variables.
-     * @param {{ mobile: string, variablesValues: string }} opts
-     * variablesValues — pipe-separated, e.g. "123456" or "123456|CredAxis"
+     * @param {{ mobile: string, variablesValues: string, messageId?: string }} opts
+     * variablesValues — pipe-separated, e.g. "123456" or "1500|Ramesh Traders"
      */
-    async sendDltSms({ mobile, variablesValues }) {
-        this.assertConfigured();
+    async sendDltSms({ mobile, variablesValues, messageId }) {
+        const templateId = messageId || this.messageId;
+        this.assertConfigured(templateId);
 
         const numbers = String(mobile || "")
             .replace(/\D/g, "")
@@ -55,7 +56,7 @@ class Fast2SmsClient {
                 data: {
                     route: this.route,
                     sender_id: this.senderId,
-                    message: this.messageId,
+                    message: templateId,
                     variables_values: String(variablesValues || ""),
                     numbers,
                     flash: 0,

@@ -1,6 +1,7 @@
 const Mandate = require("./mandate.model");
 const Installment = require("./installment.model");
 const MandateTransaction = require("./transaction.model");
+const mandateSms = require("./sms.service");
 
 const amountValue = (party) => {
     if (!party) return null;
@@ -16,6 +17,16 @@ const extractMode = (raw) =>
 const extractTxns = (raw) => {
     const txns = raw?.meta?.txns;
     return Array.isArray(txns) ? txns : [];
+};
+
+/** RocketPay sometimes wraps the entity as `{ data: { id, ... } }`. */
+const unwrapEntity = (payload) => {
+    if (!payload || typeof payload !== "object") return payload;
+    if (payload.id) return payload;
+    if (payload.data && typeof payload.data === "object" && payload.data.id) {
+        return payload.data;
+    }
+    return payload;
 };
 
 const upsertMandateTxns = async (mandateDoc, raw) => {
@@ -80,7 +91,7 @@ const upsertInstallmentTxns = async (installmentDoc, raw) => {
  * Upsert local mandate from RocketPay mandate entity.
  */
 exports.syncMandateFromRocketPay = async (
-    raw,
+    rawInput,
     {
         userId = null,
         referenceId = null,
@@ -90,6 +101,7 @@ exports.syncMandateFromRocketPay = async (
         clientMetaOverride = null,
     } = {}
 ) => {
+    const raw = unwrapEntity(rawInput);
     if (!raw || !raw.id) {
         return null;
     }
@@ -118,16 +130,36 @@ exports.syncMandateFromRocketPay = async (
         checkoutUrl:
             raw.meta?.mandate_auth_checkout_url ||
             raw.meta?.return_url ||
+            existingDoc?.checkoutUrl ||
             null,
         payer: raw.payer || null,
-        payees: raw.payees || null,
-        clientMeta: clientMetaOverride || raw.client_meta || null,
         meta: raw.meta || null,
-        deleted: Boolean(raw.deleted),
         raw,
         lastSyncedAt: new Date(),
         source,
     };
+
+    // Preserve local soft-delete unless RocketPay explicitly marks deleted
+    if (raw.deleted === true) {
+        set.deleted = true;
+    } else if (!existingDoc) {
+        set.deleted = false;
+    }
+
+    // Do not wipe local payees / clientMeta when RocketPay omits them
+    if (raw.payees != null) {
+        set.payees = raw.payees;
+    } else if (!existingDoc) {
+        set.payees = null;
+    }
+
+    if (clientMetaOverride) {
+        set.clientMeta = clientMetaOverride;
+    } else if (raw.client_meta != null) {
+        set.clientMeta = raw.client_meta;
+    } else if (!existingDoc) {
+        set.clientMeta = null;
+    }
 
     if (schedule) {
         set.schedule = schedule;
@@ -162,6 +194,7 @@ exports.syncMandateFromRocketPay = async (
     }
 
     await upsertMandateTxns(doc, raw);
+    mandateSms.afterMandateSync(doc);
     return doc;
 };
 
@@ -169,9 +202,10 @@ exports.syncMandateFromRocketPay = async (
  * Upsert local installment from RocketPay installment entity.
  */
 exports.syncInstallmentFromRocketPay = async (
-    raw,
+    rawInput,
     { userId = null, mandateDoc = null, source = "API" } = {}
 ) => {
+    const raw = unwrapEntity(rawInput);
     if (!raw || !raw.id) {
         return null;
     }
@@ -182,6 +216,10 @@ exports.syncInstallmentFromRocketPay = async (
             rocketpayId: String(raw.mandate_id),
         });
     }
+
+    const existingInstallment = await Installment.findOne({
+        rocketpayId: String(raw.id),
+    }).select("user deleted clientMeta payees");
 
     const set = {
         rocketpayId: String(raw.id),
@@ -197,19 +235,31 @@ exports.syncInstallmentFromRocketPay = async (
         paymentOrderId: raw.payment_order_id || null,
         mmsId: raw.mms_id || null,
         payer: raw.payer || null,
-        payees: raw.payees || null,
-        clientMeta: raw.client_meta || null,
         meta: raw.meta || null,
-        deleted: Boolean(raw.deleted),
         raw,
         lastSyncedAt: new Date(),
         source,
     };
 
+    if (raw.deleted === true) {
+        set.deleted = true;
+    } else if (!existingInstallment) {
+        set.deleted = false;
+    }
+
+    if (raw.payees != null) {
+        set.payees = raw.payees;
+    } else if (!existingInstallment) {
+        set.payees = null;
+    }
+
+    if (raw.client_meta != null) {
+        set.clientMeta = raw.client_meta;
+    } else if (!existingInstallment) {
+        set.clientMeta = null;
+    }
+
     // Prefer existing owner → parent mandate user → caller userId
-    const existingInstallment = await Installment.findOne({
-        rocketpayId: String(raw.id),
-    }).select("user");
     const resolvedUser =
         existingInstallment?.user || mandate?.user || userId || null;
     if (resolvedUser) {
@@ -223,18 +273,20 @@ exports.syncInstallmentFromRocketPay = async (
     );
 
     await upsertInstallmentTxns(doc, raw);
+    mandateSms.afterInstallmentSync(doc, mandate);
     return doc;
 };
 
 exports.isMandateEntity = (payload) => {
-    if (!payload || typeof payload !== "object") return false;
+    const entity = unwrapEntity(payload);
+    if (!entity || typeof entity !== "object") return false;
     // Mandate has frequency / approval_amount; installment has mandate_id + due_date
-    if (payload.mandate_id && (payload.due_date || payload.schedule_date)) {
+    if (entity.mandate_id && (entity.due_date || entity.schedule_date)) {
         return false;
     }
     return Boolean(
-        payload.frequency ||
-            payload.approval_amount != null ||
-            payload.payer?.tag === "CUSTOMER_COLLECTION"
+        entity.frequency ||
+            entity.approval_amount != null ||
+            entity.payer?.tag === "CUSTOMER_COLLECTION"
     );
 };

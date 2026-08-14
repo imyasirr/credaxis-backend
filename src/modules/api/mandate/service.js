@@ -81,8 +81,45 @@ const resolveDistributorProfile = async (userId) => {
     };
 };
 
+/**
+ * Prefer body customer.instrument (payer). If missing, use JWT user's primary bank.
+ */
 const attachCustomerInstrument = async (userId, body) => {
-    if (body.customer?.instrument) {
+    const instrument = body.customer?.instrument;
+    if (instrument && typeof instrument === "object") {
+        const type = String(instrument.type || "").trim().toUpperCase();
+        if (type) instrument.type = type;
+
+        if (type === "VPA") {
+            if (!String(instrument.vpa || "").trim()) {
+                throw new ApiError(
+                    400,
+                    "customer.instrument.vpa is required when type is VPA"
+                );
+            }
+            return;
+        }
+
+        const requiredFields = [
+            "account_number",
+            "ifsc",
+            "account_holder_name",
+            "account_type",
+        ];
+        const missing = requiredFields.filter(
+            (field) => !String(instrument[field] || "").trim()
+        );
+        if (missing.length > 0) {
+            throw new ApiError(
+                400,
+                `customer.instrument missing fields: ${missing.join(", ")}`
+            );
+        }
+
+        if (!instrument.type) instrument.type = "BANK_ACCOUNT";
+        instrument.account_type = toRocketPayAccountType(
+            instrument.account_type
+        );
         return;
     }
 
@@ -95,7 +132,7 @@ const attachCustomerInstrument = async (userId, body) => {
     if (!bankAccount) {
         throw new ApiError(
             400,
-            "Primary bank account not found. Add a primary bank account before creating mandate"
+            "Primary bank account not found. Add a primary bank account or send customer.instrument"
         );
     }
 
@@ -123,11 +160,8 @@ const attachDistributorToRocketPayBody = (rpBody, distributor) => {
         business_name: distributor.businessName || distributor.name,
     };
 
-    // Only override payees when we have a RocketPay sub-account id for this distributor
-    if (
-        distributor.rocketpayAccountId &&
-        (!Array.isArray(rpBody.payees) || rpBody.payees.length === 0)
-    ) {
+    // Always set payees when distributor has a RocketPay sub-account
+    if (distributor.rocketpayAccountId) {
         rpBody.payees = [
             {
                 account_id: distributor.rocketpayAccountId,
@@ -138,13 +172,19 @@ const attachDistributorToRocketPayBody = (rpBody, distributor) => {
     return rpBody;
 };
 
-exports.resolveMandate = async (idOrRpId, { userId = null } = {}) => {
+exports.resolveMandate = async (
+    idOrRpId,
+    { userId = null, includeDeleted = false } = {}
+) => {
     const filter = isObjectId(idOrRpId)
         ? { $or: [{ _id: idOrRpId }, { rocketpayId: String(idOrRpId) }] }
         : { rocketpayId: String(idOrRpId) };
 
     if (userId) {
         filter.user = userId;
+    }
+    if (!includeDeleted) {
+        filter.deleted = { $ne: true };
     }
 
     const doc = await Mandate.findOne(filter);
@@ -154,13 +194,19 @@ exports.resolveMandate = async (idOrRpId, { userId = null } = {}) => {
     return doc;
 };
 
-exports.resolveInstallment = async (idOrRpId, { userId = null } = {}) => {
+exports.resolveInstallment = async (
+    idOrRpId,
+    { userId = null, includeDeleted = false } = {}
+) => {
     const filter = isObjectId(idOrRpId)
         ? { $or: [{ _id: idOrRpId }, { rocketpayId: String(idOrRpId) }] }
         : { rocketpayId: String(idOrRpId) };
 
     if (userId) {
         filter.user = userId;
+    }
+    if (!includeDeleted) {
+        filter.deleted = { $ne: true };
     }
 
     const doc = await Installment.findOne(filter);
@@ -216,19 +262,13 @@ exports.createMandate = async (userId, body, ipAddress) => {
             const metaCount = Number(
                 claimedPayment.meta?.installmentCount ?? 0
             );
-            if (
-                fees.installmentFee.total > 0 &&
-                metaFreq &&
-                frequency &&
-                metaFreq !== frequency
-            ) {
+            if (metaFreq && frequency && metaFreq !== frequency) {
                 throw new ApiError(
                     400,
                     `Payment was for frequency ${metaFreq} but mandate is ${frequency}`
                 );
             }
             if (
-                fees.installmentFee.total > 0 &&
                 metaCount > 0 &&
                 Number(fees.installmentFee.installmentCount) > 0 &&
                 metaCount !== Number(fees.installmentFee.installmentCount)
@@ -270,6 +310,13 @@ exports.createMandate = async (userId, body, ipAddress) => {
             source: "API",
             distributor,
         });
+
+        if (!synced?._id && !synced?.id) {
+            throw new ApiError(
+                502,
+                "Mandate created on RocketPay but local sync failed"
+            );
+        }
 
         // Ensure local snapshot even if RocketPay strips client_meta display fields
         if (synced?._id || synced?.id) {
@@ -447,6 +494,12 @@ exports.createInstallment = async (userId, mandateId, body, ipAddress) => {
             "Create installment is only valid for ADHOC schedule mandates"
         );
     }
+    if (local.state !== "ACTIVATED") {
+        throw new ApiError(
+            400,
+            "Create installment is only allowed when mandate is ACTIVATED"
+        );
+    }
 
     const paymentService = require("../payments/service");
     const mandateInstallmentFeeService = require("../payments/mandateInstallmentFee.service");
@@ -486,6 +539,13 @@ exports.createInstallment = async (userId, mandateId, body, ipAddress) => {
             rpBody,
             { userId, ipAddress, source: "API" }
         );
+
+        if (!synced?._id && !synced?.id) {
+            throw new ApiError(
+                502,
+                "Installment created on RocketPay but local sync failed"
+            );
+        }
 
         if (claimedPayment?._id) {
             await paymentService.attachMandateReference(
@@ -529,6 +589,7 @@ exports.listInstallments = async (userId, mandateId, ipAddress, query = {}) => {
                 { rocketpayMandateId: local.rocketpayId },
             ],
             user: userId,
+            deleted: { $ne: true },
         };
         if (query.state) filter.state = String(query.state).toUpperCase();
 
@@ -556,11 +617,26 @@ exports.listInstallments = async (userId, mandateId, ipAddress, query = {}) => {
             local.rocketpayId,
             { userId, ipAddress, source: "API" }
         );
+        let items = Array.isArray(synced) ? synced : [];
+        if (query.state) {
+            const state = String(query.state).toUpperCase();
+            items = items.filter((i) => i.state === state);
+        }
+        const page = Number(query.page) || 1;
+        const limit = Math.min(Number(query.limit) || 50, 100);
+        const total = items.length;
+        const skip = (page - 1) * limit;
+        const pageItems = items.slice(skip, skip + limit);
         return {
-            installments: Array.isArray(synced)
-                ? synced.map(formatInstallment)
-                : [],
+            installments: pageItems.map(formatInstallment),
+            pagination: {
+                page,
+                limit,
+                total,
+                totalPages: Math.ceil(total / limit) || 0,
+            },
             rocketpay: data,
+            syncedFromRocketPay: true,
         };
     }
 
@@ -577,8 +653,25 @@ exports.listInstallments = async (userId, mandateId, ipAddress, query = {}) => {
             { userId, ipAddress, source: "API" }
         );
         if (Array.isArray(synced) && synced.length > 0) {
+            let items = synced;
+            if (query.state) {
+                const state = String(query.state).toUpperCase();
+                items = items.filter((i) => i.state === state);
+            }
+            const page = Number(query.page) || 1;
+            const limit = Math.min(Number(query.limit) || 50, 100);
+            const total = items.length;
+            const skip = (page - 1) * limit;
             return {
-                installments: synced.map(formatInstallment),
+                installments: items
+                    .slice(skip, skip + limit)
+                    .map(formatInstallment),
+                pagination: {
+                    page,
+                    limit,
+                    total,
+                    totalPages: Math.ceil(total / limit) || 0,
+                },
                 rocketpay: data,
                 syncedFromRocketPay: true,
             };
@@ -613,6 +706,21 @@ exports.refreshInstallment = async (userId, id, ipAddress) => {
 
 exports.skipInstallment = async (userId, id, ipAddress) => {
     const local = await exports.resolveInstallment(id, { userId });
+
+    if (local.dueDate) {
+        const due = new Date(`${local.dueDate}T00:00:00+05:30`);
+        if (!Number.isNaN(due.getTime())) {
+            const msLeft = due.getTime() - Date.now();
+            const daysLeft = msLeft / (24 * 60 * 60 * 1000);
+            if (daysLeft < 2) {
+                throw new ApiError(
+                    400,
+                    "Skip is only allowed when due date is at least 2 days away"
+                );
+            }
+        }
+    }
+
     const { data, synced } = await gateway.skipInstallment(local.rocketpayId, {
         userId,
         ipAddress,

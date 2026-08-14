@@ -7,13 +7,17 @@ const MandateWebhookLog = require("../../api/mandate/webhookLog.model");
 const MandateApiLog = require("../../api/mandate/apiLog.model");
 const gateway = require("../../api/mandate/rocketpay.gateway");
 const {
-    formatMandate,
-    formatInstallment,
+    formatMandate: formatMandateApi,
+    formatInstallment: formatInstallmentApi,
     formatTransaction,
     formatWebhookLog,
     formatApiLog,
 } = require("../../api/mandate/mapper");
 const ApiError = require("../../../utils/ApiError");
+
+const formatMandate = (doc) => formatMandateApi(doc, { includeRaw: true });
+const formatInstallment = (doc) =>
+    formatInstallmentApi(doc, { includeRaw: true });
 
 const isObjectId = (value) => {
     const mongoose = require("mongoose");
@@ -103,6 +107,23 @@ const enrichMandate = (formatted, profileMap) => {
         name: mandate.customerName || "",
         mobile: mandate.customerMobile || "",
     };
+    // Prefer persisted distributor snapshot for ops UI
+    if (mandate.distributor?.name || mandate.distributor?.businessName) {
+        mandate.placedBy = {
+            id: mandate.distributor.userId || mandate.placedBy?.id || null,
+            fullName:
+                mandate.distributor.businessName ||
+                mandate.distributor.name ||
+                mandate.placedBy?.fullName ||
+                "",
+            mobile:
+                mandate.distributor.mobile || mandate.placedBy?.mobile || "",
+            email: mandate.distributor.email || mandate.placedBy?.email || "",
+            status: mandate.placedBy?.status || "",
+            businessName: mandate.distributor.businessName || null,
+            rocketpayAccountId: mandate.distributor.rocketpayAccountId || null,
+        };
+    }
     mandate.instrument = extractInstrument(mandate.payer);
     return mandate;
 };
