@@ -107,6 +107,91 @@ const enrichMandate = (formatted, profileMap) => {
     return mandate;
 };
 
+const attachInstallmentStats = async (mandateDocs) => {
+    if (!mandateDocs.length) return new Map();
+
+    const mandateIds = mandateDocs.map((m) => m._id);
+    const rocketpayIds = mandateDocs
+        .map((m) => m.rocketpayId)
+        .filter(Boolean);
+
+    const rows = await Installment.aggregate([
+        {
+            $match: {
+                deleted: { $ne: true },
+                $or: [
+                    { mandate: { $in: mandateIds } },
+                    ...(rocketpayIds.length
+                        ? [{ rocketpayMandateId: { $in: rocketpayIds } }]
+                        : []),
+                ],
+            },
+        },
+        {
+            $group: {
+                _id: {
+                    mandate: "$mandate",
+                    rocketpayMandateId: "$rocketpayMandateId",
+                },
+                count: { $sum: 1 },
+                successCount: {
+                    $sum: {
+                        $cond: [
+                            { $eq: ["$state", "COLLECTION_SUCCESS"] },
+                            1,
+                            0,
+                        ],
+                    },
+                },
+                failedCount: {
+                    $sum: {
+                        $cond: [
+                            { $eq: ["$state", "COLLECTION_FAILED"] },
+                            1,
+                            0,
+                        ],
+                    },
+                },
+                totalAmount: { $sum: { $ifNull: ["$amount", 0] } },
+            },
+        },
+    ]);
+
+    const byMandateId = new Map();
+    const byRocketpayId = new Map();
+
+    for (const row of rows) {
+        const stats = {
+            localInstallmentCount: row.count || 0,
+            installmentSuccessCount: row.successCount || 0,
+            installmentFailedCount: row.failedCount || 0,
+            installmentTotalAmount: row.totalAmount || 0,
+        };
+        if (row._id?.mandate) {
+            byMandateId.set(String(row._id.mandate), stats);
+        }
+        if (row._id?.rocketpayMandateId) {
+            byRocketpayId.set(String(row._id.rocketpayMandateId), stats);
+        }
+    }
+
+    const result = new Map();
+    for (const doc of mandateDocs) {
+        const stats =
+            byMandateId.get(String(doc._id)) ||
+            (doc.rocketpayId
+                ? byRocketpayId.get(String(doc.rocketpayId))
+                : null) || {
+                localInstallmentCount: 0,
+                installmentSuccessCount: 0,
+                installmentFailedCount: 0,
+                installmentTotalAmount: 0,
+            };
+        result.set(String(doc._id), stats);
+    }
+    return result;
+};
+
 exports.getDashboard = async () => {
     const [
         totalMandates,
@@ -228,12 +313,225 @@ exports.getMandates = async (query = {}) => {
     const userIds = items
         .map((m) => m.user?._id?.toString())
         .filter(Boolean);
-    const profileMap = await attachProfiles(userIds);
+    const [profileMap, installmentStats] = await Promise.all([
+        attachProfiles(userIds),
+        attachInstallmentStats(items),
+    ]);
 
     return {
-        mandates: items.map((m) =>
-            enrichMandate(formatMandate(m), profileMap)
-        ),
+        mandates: items.map((m) => {
+            const mandate = enrichMandate(formatMandate(m), profileMap);
+            const stats = installmentStats.get(String(m._id)) || {
+                localInstallmentCount: 0,
+                installmentSuccessCount: 0,
+                installmentFailedCount: 0,
+                installmentTotalAmount: 0,
+            };
+            return {
+                ...mandate,
+                ...stats,
+                // Prefer live local count; fall back to RocketPay schedule count
+                installmentsOnMandate:
+                    stats.localInstallmentCount ||
+                    Number(mandate.installmentCount) ||
+                    0,
+            };
+        }),
+        pagination: buildPagination(page, limit, total),
+    };
+};
+
+/**
+ * Per-user mandate + installment totals for admin table.
+ */
+exports.getUsersSummary = async (query = {}) => {
+    const page = Number(query.page) || 1;
+    const limit = Math.min(Number(query.limit) || 20, 100);
+    const skip = (page - 1) * limit;
+    const search = String(query.search || "").trim();
+
+    let userFilterIds = null;
+    if (search) {
+        const users = await User.find({
+            isDeleted: false,
+            $or: [
+                { mobile: { $regex: search, $options: "i" } },
+                { email: { $regex: search, $options: "i" } },
+            ],
+        })
+            .select("_id")
+            .limit(200);
+        userFilterIds = users.map((u) => u._id);
+        if (!userFilterIds.length) {
+            return {
+                users: [],
+                pagination: buildPagination(page, limit, 0),
+            };
+        }
+    }
+
+    const mandateMatch = {
+        user: { $ne: null },
+        deleted: { $ne: true },
+    };
+    if (userFilterIds) {
+        mandateMatch.user = { $in: userFilterIds };
+    }
+
+    const [facet] = await Mandate.aggregate([
+        { $match: mandateMatch },
+        {
+            $group: {
+                _id: "$user",
+                mandateCount: { $sum: 1 },
+                activatedMandates: {
+                    $sum: {
+                        $cond: [{ $eq: ["$state", "ACTIVATED"] }, 1, 0],
+                    },
+                },
+                createdMandates: {
+                    $sum: {
+                        $cond: [{ $eq: ["$state", "CREATED"] }, 1, 0],
+                    },
+                },
+                cancelledMandates: {
+                    $sum: {
+                        $cond: [{ $eq: ["$state", "CANCELLED"] }, 1, 0],
+                    },
+                },
+                completedMandates: {
+                    $sum: {
+                        $cond: [{ $eq: ["$state", "COMPLETED"] }, 1, 0],
+                    },
+                },
+                totalApprovalAmount: {
+                    $sum: { $ifNull: ["$approvalAmount", 0] },
+                },
+                lastMandateAt: { $max: "$createdAt" },
+            },
+        },
+        { $sort: { lastMandateAt: -1 } },
+        {
+            $facet: {
+                items: [{ $skip: skip }, { $limit: limit }],
+                totalCount: [{ $count: "count" }],
+            },
+        },
+    ]);
+
+    const rows = facet?.items || [];
+    const total = facet?.totalCount?.[0]?.count || 0;
+    const pageUserIds = rows.map((r) => r._id).filter(Boolean);
+
+    const [installmentRows, users, profileMap] = await Promise.all([
+        pageUserIds.length
+            ? Installment.aggregate([
+                  {
+                      $match: {
+                          user: { $in: pageUserIds },
+                          deleted: { $ne: true },
+                      },
+                  },
+                  {
+                      $group: {
+                          _id: "$user",
+                          installmentCount: { $sum: 1 },
+                          collectionSuccess: {
+                              $sum: {
+                                  $cond: [
+                                      {
+                                          $eq: [
+                                              "$state",
+                                              "COLLECTION_SUCCESS",
+                                          ],
+                                      },
+                                      1,
+                                      0,
+                                  ],
+                              },
+                          },
+                          collectionFailed: {
+                              $sum: {
+                                  $cond: [
+                                      {
+                                          $eq: [
+                                              "$state",
+                                              "COLLECTION_FAILED",
+                                          ],
+                                      },
+                                      1,
+                                      0,
+                                  ],
+                              },
+                          },
+                          collectionInitiated: {
+                              $sum: {
+                                  $cond: [
+                                      {
+                                          $eq: [
+                                              "$state",
+                                              "COLLECTION_INITIATED",
+                                          ],
+                                      },
+                                      1,
+                                      0,
+                                  ],
+                              },
+                          },
+                          totalInstallmentAmount: {
+                              $sum: { $ifNull: ["$amount", 0] },
+                          },
+                      },
+                  },
+              ])
+            : [],
+        pageUserIds.length
+            ? User.find({ _id: { $in: pageUserIds } }).select(
+                  "mobile email status"
+              )
+            : [],
+        attachProfiles(pageUserIds.map(String)),
+    ]);
+
+    const installmentMap = Object.fromEntries(
+        installmentRows.map((r) => [String(r._id), r])
+    );
+    const userMap = Object.fromEntries(
+        users.map((u) => [String(u._id), u])
+    );
+
+    return {
+        users: rows.map((row) => {
+            const uid = String(row._id);
+            const user = userMap[uid];
+            const profile = profileMap[uid];
+            const inst = installmentMap[uid] || {};
+            const fullName = profile
+                ? [profile.firstName, profile.lastName]
+                      .filter(Boolean)
+                      .join(" ")
+                : "";
+
+            return {
+                userId: uid,
+                fullName,
+                mobile: user?.mobile || "",
+                email: user?.email || "",
+                status: user?.status || "",
+                mandateCount: row.mandateCount || 0,
+                activatedMandates: row.activatedMandates || 0,
+                createdMandates: row.createdMandates || 0,
+                cancelledMandates: row.cancelledMandates || 0,
+                completedMandates: row.completedMandates || 0,
+                totalApprovalAmount: row.totalApprovalAmount || 0,
+                installmentCount: inst.installmentCount || 0,
+                collectionSuccess: inst.collectionSuccess || 0,
+                collectionFailed: inst.collectionFailed || 0,
+                collectionInitiated: inst.collectionInitiated || 0,
+                totalInstallmentAmount: inst.totalInstallmentAmount || 0,
+                lastMandateAt: row.lastMandateAt || null,
+            };
+        }),
         pagination: buildPagination(page, limit, total),
     };
 };

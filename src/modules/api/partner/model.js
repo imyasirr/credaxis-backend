@@ -87,6 +87,18 @@ const partnerSchema = new mongoose.Schema(
             trim: true,
         },
 
+        /**
+         * RocketPay sub-distributor / settlement account id (payees.account_id).
+         * When set, mandate create uses this so UPI can show this distributor
+         * instead of the default enterprise (BisaniBrothers) merchant.
+         */
+        rocketpayAccountId: {
+            type: String,
+            trim: true,
+            default: null,
+            index: true,
+        },
+
         commissionRate: {
             type: Number,
             default: 2,

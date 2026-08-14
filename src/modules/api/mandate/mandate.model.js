@@ -62,6 +62,24 @@ const mandateSchema = new mongoose.Schema(
             default: null,
         },
 
+        /**
+         * App user who creates the mandate (collector / distributor).
+         * Shown in CredAxis; also sent to RocketPay client_meta for display.
+         */
+        distributor: {
+            userId: {
+                type: mongoose.Schema.Types.ObjectId,
+                ref: "User",
+                default: null,
+            },
+            name: { type: String, trim: true, default: null },
+            mobile: { type: String, trim: true, default: null },
+            email: { type: String, trim: true, default: null },
+            businessName: { type: String, trim: true, default: null },
+            businessType: { type: String, trim: true, default: null },
+            rocketpayAccountId: { type: String, trim: true, default: null },
+        },
+
         approvalAmount: { type: Number, default: null },
         advanceAmount: { type: Number, default: null },
         installmentCount: { type: Number, default: null },

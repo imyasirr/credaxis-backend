@@ -243,18 +243,83 @@ const createMandateCreatePayment = async (userId, body = {}) => {
         );
     }
 
-    const fee = await mandateCreateFeeService.getMandateCreateFeeSetting();
-    if (!fee.enabled) {
+    const frequency = String(
+        body.frequency || body.schedule?.frequency || ""
+    )
+        .trim()
+        .toUpperCase();
+    const installmentCount = Number(
+        body.installment_count ??
+            body.installmentCount ??
+            body.schedule?.installment_count ??
+            0
+    );
+    const adhocInstallmentOnly =
+        body.adhocInstallmentOnly === true ||
+        body.adhoc_installment_only === true;
+
+    let breakdown;
+    if (adhocInstallmentOnly) {
+        const mandateInstallmentFeeService = require("./mandateInstallmentFee.service");
+        const adhoc =
+            await mandateInstallmentFeeService.computeAdhocInstallmentCreateFee();
+        if (!adhoc.enabled || adhoc.amount <= 0) {
+            throw new ApiError(
+                400,
+                "ADHOC installment fee is disabled or zero"
+            );
+        }
+        breakdown = {
+            currency: adhoc.currency,
+            createFee: { enabled: false, amount: 0 },
+            installmentFee: {
+                enabled: true,
+                applicable: true,
+                frequency: "ADHOC",
+                installmentCount: 1,
+                perInstallment: adhoc.amount,
+                total: adhoc.amount,
+            },
+            grandTotal: adhoc.amount,
+            paymentRequired: true,
+            coinConversion: adhoc.coinConversion,
+            coinsRequired: adhoc.coinsRequired,
+            conversionLabel: adhoc.conversionLabel,
+        };
+    } else {
+        breakdown = await mandateCreateFeeService.computeMandateSetupFees({
+            frequency: frequency || null,
+            installmentCount,
+        });
+    }
+
+    if (!breakdown.paymentRequired) {
         throw new ApiError(
             400,
-            "Mandate create payments are currently disabled"
+            "No mandate fee due for this schedule (create + installment fees are off or zero)"
         );
     }
 
-    const amount = fee.amount;
+    const amount = breakdown.grandTotal;
+    const coinsRequired = breakdown.coinsRequired;
     const description =
         String(body.description || "").trim() ||
-        PURPOSE_LABELS[PAYMENT_PURPOSES.MANDATE_CREATE];
+        (breakdown.installmentFee.total > 0
+            ? `Mandate fees (create ₹${breakdown.createFee.amount} + installments ₹${breakdown.installmentFee.total})`
+            : PURPOSE_LABELS[PAYMENT_PURPOSES.MANDATE_CREATE]);
+
+    const feeMeta = {
+        method,
+        frequency: adhocInstallmentOnly
+            ? "ADHOC"
+            : frequency || null,
+        installmentCount: breakdown.installmentFee.installmentCount || 0,
+        createFeeAmount: breakdown.createFee.amount,
+        installmentFeePer: breakdown.installmentFee.perInstallment,
+        installmentFeeTotal: breakdown.installmentFee.total,
+        grandTotal: breakdown.grandTotal,
+        adhocInstallmentOnly: Boolean(adhocInstallmentOnly),
+    };
 
     const baseMeta =
         body.meta && typeof body.meta === "object" ? { ...body.meta } : {};
@@ -263,7 +328,7 @@ const createMandateCreatePayment = async (userId, body = {}) => {
         return createOnlinePayment(userId, PAYMENT_PURPOSES.MANDATE_CREATE, {
             ...body,
             description,
-            meta: { ...baseMeta, method },
+            meta: { ...baseMeta, ...feeMeta },
             _method: method,
             _amount: amount,
         });
@@ -281,7 +346,7 @@ const createMandateCreatePayment = async (userId, body = {}) => {
             description,
             meta: {
                 ...baseMeta,
-                method,
+                ...feeMeta,
                 paidVia: "WALLET",
             },
         });
@@ -289,7 +354,7 @@ const createMandateCreatePayment = async (userId, body = {}) => {
         try {
             const result = await walletService.debitMoney(userId, {
                 amount,
-                description: `Mandate create — ${payment._id}`,
+                description: `Mandate fees — ${payment._id}`,
                 referenceId: String(payment._id),
             });
 
@@ -306,6 +371,7 @@ const createMandateCreatePayment = async (userId, body = {}) => {
             return {
                 payment: formatPayment(payment),
                 method,
+                fees: breakdown,
                 canCreateMandate: true,
                 wallet: result.wallet,
                 transaction: result.transaction,
@@ -322,7 +388,6 @@ const createMandateCreatePayment = async (userId, body = {}) => {
 
     // COINS
     const coinService = require("../coins/service");
-    const coinsRequired = fee.coinsRequired;
 
     const payment = await Payment.create({
         user: userId,
@@ -334,18 +399,18 @@ const createMandateCreatePayment = async (userId, body = {}) => {
         description,
         meta: {
             ...baseMeta,
-            method,
+            ...feeMeta,
             paidVia: "COINS",
             coinsRequired,
-            coinConversion: fee.coinConversion,
-            conversionLabel: fee.conversionLabel,
+            coinConversion: breakdown.coinConversion,
+            conversionLabel: breakdown.conversionLabel,
         },
     });
 
     try {
         const result = await coinService.debitCoins(userId, {
             amount: coinsRequired,
-            description: `Mandate create — ${payment._id}`,
+            description: `Mandate fees — ${payment._id}`,
             referenceId: String(payment._id),
             source: "OTHER",
         });
@@ -364,6 +429,7 @@ const createMandateCreatePayment = async (userId, body = {}) => {
         return {
             payment: formatPayment(payment),
             method,
+            fees: breakdown,
             canCreateMandate: true,
             coins: result.wallet,
             transaction: result.transaction,

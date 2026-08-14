@@ -408,6 +408,16 @@ router.put(
     adminSettingsController.updateMandateCreateFee
 );
 router.get(
+    "/settings/mandate-installment-fee",
+    adminSettingsController.getMandateInstallmentFee
+);
+router.put(
+    "/settings/mandate-installment-fee",
+    adminSettingsValidator.updateMandateInstallmentFee,
+    validate,
+    adminSettingsController.updateMandateInstallmentFee
+);
+router.get(
     "/settings/first-topup-bonus",
     adminSettingsController.getFirstTopupBonus
 );
@@ -478,6 +488,12 @@ router.delete(
 
 // ── Mandates (RocketPay) ──────────────────────────────────────
 router.get("/mandates/dashboard", adminMandateController.getDashboard);
+router.get(
+    "/mandates/users",
+    adminMandateValidator.listUsersSummary,
+    validate,
+    adminMandateController.getUsersSummary
+);
 router.get(
     "/mandates",
     adminMandateValidator.listMandates,

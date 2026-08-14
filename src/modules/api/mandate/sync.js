@@ -81,7 +81,14 @@ const upsertInstallmentTxns = async (installmentDoc, raw) => {
  */
 exports.syncMandateFromRocketPay = async (
     raw,
-    { userId = null, referenceId = null, schedule = null, source = "API" } = {}
+    {
+        userId = null,
+        referenceId = null,
+        schedule = null,
+        source = "API",
+        distributor = null,
+        clientMetaOverride = null,
+    } = {}
 ) => {
     if (!raw || !raw.id) {
         return null;
@@ -114,7 +121,7 @@ exports.syncMandateFromRocketPay = async (
             null,
         payer: raw.payer || null,
         payees: raw.payees || null,
-        clientMeta: raw.client_meta || null,
+        clientMeta: clientMetaOverride || raw.client_meta || null,
         meta: raw.meta || null,
         deleted: Boolean(raw.deleted),
         raw,
@@ -124,6 +131,18 @@ exports.syncMandateFromRocketPay = async (
 
     if (schedule) {
         set.schedule = schedule;
+    }
+
+    if (distributor) {
+        set.distributor = {
+            userId: distributor.userId || null,
+            name: distributor.name || null,
+            mobile: distributor.mobile || null,
+            email: distributor.email || null,
+            businessName: distributor.businessName || null,
+            businessType: distributor.businessType || null,
+            rocketpayAccountId: distributor.rocketpayAccountId || null,
+        };
     }
 
     // Never overwrite an existing owner (admin refresh/recon must not steal user).

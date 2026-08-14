@@ -1,5 +1,6 @@
 const creditCheckFeeService = require("../../api/payments/creditCheckFee.service");
 const mandateCreateFeeService = require("../../api/payments/mandateCreateFee.service");
+const mandateInstallmentFeeService = require("../../api/payments/mandateInstallmentFee.service");
 const firstTopupBonusService = require("../../api/wallet/firstTopupBonus.service");
 const asyncHandler = require("../../../utils/asyncHandler");
 const response = require("../../../utils/response");
@@ -26,6 +27,20 @@ exports.updateMandateCreateFee = asyncHandler(async (req, res) => {
         req.body
     );
     return response.success(res, "Mandate create fee updated", data);
+});
+
+exports.getMandateInstallmentFee = asyncHandler(async (_req, res) => {
+    const data =
+        await mandateInstallmentFeeService.getMandateInstallmentFeeSetting();
+    return response.success(res, "Mandate installment fee fetched", data);
+});
+
+exports.updateMandateInstallmentFee = asyncHandler(async (req, res) => {
+    const data =
+        await mandateInstallmentFeeService.updateMandateInstallmentFeeSetting(
+            req.body
+        );
+    return response.success(res, "Mandate installment fee updated", data);
 });
 
 exports.getFirstTopupBonus = asyncHandler(async (_req, res) => {

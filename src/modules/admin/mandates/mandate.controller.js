@@ -8,6 +8,11 @@ exports.getDashboard = asyncHandler(async (req, res) => {
     return response.success(res, "Mandate dashboard fetched", data);
 });
 
+exports.getUsersSummary = asyncHandler(async (req, res) => {
+    const data = await adminMandateService.getUsersSummary(req.query);
+    return response.success(res, "Mandate users summary fetched", data);
+});
+
 exports.getMandates = asyncHandler(async (req, res) => {
     const data = await adminMandateService.getMandates(req.query);
     return response.success(res, "Mandates fetched successfully", data);

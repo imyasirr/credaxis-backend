@@ -21,6 +21,15 @@ exports.createPayment = [
         .withMessage("Amount must be at least ₹1"),
     body("description").optional().trim().isLength({ max: 200 }),
     body("meta").optional().isObject(),
+    body("frequency").optional().trim().toUpperCase(),
+    body("installment_count")
+        .optional()
+        .isInt({ min: 0 })
+        .withMessage("installment_count must be >= 0"),
+    body("installmentCount")
+        .optional()
+        .isInt({ min: 0 })
+        .withMessage("installmentCount must be >= 0"),
     body().custom((value) => {
         if (
             value.purpose === PAYMENT_PURPOSES.WALLET_TOPUP &&

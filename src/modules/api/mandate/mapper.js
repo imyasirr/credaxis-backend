@@ -45,6 +45,18 @@ exports.formatMandate = (doc) => {
     const data = doc.toObject ? doc.toObject() : doc;
     const auth = extractMandateAuth(data.meta, data.checkoutUrl);
 
+    const distributor = data.distributor
+        ? {
+              userId: data.distributor.userId || null,
+              name: data.distributor.name || null,
+              mobile: data.distributor.mobile || null,
+              email: data.distributor.email || null,
+              businessName: data.distributor.businessName || null,
+              businessType: data.distributor.businessType || null,
+              rocketpayAccountId: data.distributor.rocketpayAccountId || null,
+          }
+        : null;
+
     return {
         id: data._id,
         rocketpayId: data.rocketpayId,
@@ -55,6 +67,8 @@ exports.formatMandate = (doc) => {
         mode: data.mode,
         customerMobile: data.customerMobile,
         customerName: data.customerName,
+        /** Collector — who created mandate / receives collection (CredAxis user) */
+        distributor,
         approvalAmount: data.approvalAmount,
         advanceAmount: data.advanceAmount,
         installmentCount: data.installmentCount,

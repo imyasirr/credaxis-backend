@@ -218,6 +218,8 @@ exports.createMandate = (body, ctx) =>
                 referenceId: body.reference_id || null,
                 schedule: body.schedule || null,
                 source: ctx.source || "API",
+                distributor: ctx.distributor || null,
+                clientMetaOverride: body.client_meta || null,
             }),
     });
 

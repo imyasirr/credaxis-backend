@@ -8,6 +8,12 @@ const {
     WEBHOOK_ENTITY_TYPES,
 } = require("../../api/mandate/constants");
 
+exports.listUsersSummary = [
+    query("page").optional().isInt({ min: 1 }),
+    query("limit").optional().isInt({ min: 1, max: 100 }),
+    query("search").optional().trim(),
+];
+
 exports.listMandates = [
     query("page").optional().isInt({ min: 1 }),
     query("limit").optional().isInt({ min: 1, max: 100 }),

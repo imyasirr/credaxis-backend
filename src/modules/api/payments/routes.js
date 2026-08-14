@@ -47,6 +47,13 @@ router.get(
     controller.getMandateCreateFee
 );
 
+/** Alias — same quote (create + installment fees) */
+router.get(
+    "/mandate-fees",
+    requireAction(ACTIONS.MANDATE_READ, ACTIONS.MANDATE_WRITE),
+    controller.getMandateCreateFee
+);
+
 router.post(
     "/create",
     requirePurposeAction,

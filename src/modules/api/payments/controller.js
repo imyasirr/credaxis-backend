@@ -28,8 +28,18 @@ exports.getCreditCheckFee = asyncHandler(async (req, res) => {
 });
 
 exports.getMandateCreateFee = asyncHandler(async (req, res) => {
+    const frequency =
+        req.query.frequency || req.query.Frequency || null;
+    const installmentCount =
+        req.query.installment_count ??
+        req.query.installmentCount ??
+        0;
     const data = await mandateCreateFeeService.getMandateCreateQuote(
-        req.user.id
+        req.user.id,
+        {
+            frequency,
+            installmentCount,
+        }
     );
-    return response.success(res, "Mandate create fee fetched", data);
+    return response.success(res, "Mandate fees quote fetched", data);
 });
