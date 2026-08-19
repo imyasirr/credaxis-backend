@@ -50,10 +50,17 @@ const adminPaymentValidator = require("./payments/payment.validator");
 const adminWebsiteController = require("./website/controller");
 const adminWebsiteValidator = require("./website/validator");
 
+const adminBannerController = require("./banners/banner.controller");
+const adminBannerValidator = require("./banners/banner.validator");
+
 const auth = require("../../middleware/auth.middleware");
 const authorize = require("../../middleware/role.middleware");
 const validate = require("../../middleware/validation.middleware");
-const { uploadAvatar, uploadWebsiteMedia } = require("../../middleware/upload.middleware");
+const {
+    uploadAvatar,
+    uploadWebsiteMedia,
+    uploadBannerImage,
+} = require("../../middleware/upload.middleware");
 const ROLES = require("../../constants/roles");
 
 
@@ -646,6 +653,39 @@ router.delete(
     adminWebsiteValidator.mediaIdParam,
     validate,
     adminWebsiteController.deleteMedia
+);
+
+router.get(
+    "/banners",
+    adminBannerValidator.listBanners,
+    validate,
+    adminBannerController.getBanners
+);
+router.get(
+    "/banners/:id",
+    adminBannerValidator.bannerId,
+    validate,
+    adminBannerController.getBannerById
+);
+router.post(
+    "/banners",
+    uploadBannerImage,
+    adminBannerValidator.createBanner,
+    validate,
+    adminBannerController.createBanner
+);
+router.patch(
+    "/banners/:id",
+    uploadBannerImage,
+    adminBannerValidator.updateBanner,
+    validate,
+    adminBannerController.updateBanner
+);
+router.delete(
+    "/banners/:id",
+    adminBannerValidator.bannerId,
+    validate,
+    adminBannerController.deleteBanner
 );
 
 module.exports = router;

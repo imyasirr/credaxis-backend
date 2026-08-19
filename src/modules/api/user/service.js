@@ -202,7 +202,7 @@ const soft = async (fn, fallback = null) => {
 
 /**
  * Home-screen aggregate: profile + wallet + coins + mandates +
- * notifications + KYC + credit + rewards + games + partner + referral.
+ * notifications + KYC + credit + rewards + games + partner + referral + banners.
  */
 exports.getDashboard = async (userId) => {
     const {
@@ -279,6 +279,7 @@ exports.getDashboard = async (userId) => {
         mandateAgg,
         recentMandates,
         games,
+        banners,
     ] = await Promise.all([
         soft(() => referralService.getMyReferralInfo(userId), null),
         soft(() => getPartnerAccess(userId), null),
@@ -319,6 +320,7 @@ exports.getDashboard = async (userId) => {
             games: [],
             totalAvailablePlays: 0,
         }),
+        soft(() => require("../banner/service").listActive(), []),
     ]);
 
     const byState = {};
@@ -392,6 +394,7 @@ exports.getDashboard = async (userId) => {
             recent: (recentMandates || []).map(slimMandate).filter(Boolean),
         },
         games,
+        banners,
         referral,
     };
 };

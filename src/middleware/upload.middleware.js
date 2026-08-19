@@ -112,7 +112,7 @@ const createUploader = ({ folder, fieldName, multiple = false, maxCount = 1 }) =
                 next(
                     new ApiError(
                         400,
-                        `Unexpected file field "${err.field}". Use the "avatar" field for profile photos.`
+                        `Unexpected file field "${err.field}". Use the "${fieldName}" field.`
                     )
                 );
                 return;
@@ -298,5 +298,10 @@ module.exports.uploadPartnerDocs = (() => {
 module.exports.uploadWebsiteMedia = createUploader({
     folder: "website",
     fieldName: "file",
+});
+
+module.exports.uploadBannerImage = createUploader({
+    folder: "banners",
+    fieldName: "image",
 });
 
