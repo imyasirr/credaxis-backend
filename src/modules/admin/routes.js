@@ -40,6 +40,8 @@ const adminRewardRuleValidator = require("./rewards/rewardRule.validator");
 
 const adminMandateController = require("./mandates/mandate.controller");
 const adminMandateValidator = require("./mandates/mandate.validator");
+const adminDlcController = require("./dlc/dlc.controller");
+const dlcValidator = require("../api/dlc/validator");
 
 const adminSettingsController = require("./settings/settings.controller");
 const adminSettingsValidator = require("./settings/settings.validator");
@@ -434,7 +436,89 @@ router.put(
     validate,
     adminSettingsController.updateFirstTopupBonus
 );
-
+router.get(
+    "/settings/dlc-create-fee",
+    adminSettingsController.getDlcCreateFee
+);
+router.put(
+    "/settings/dlc-create-fee",
+    adminSettingsValidator.updateDlcCreateFee,
+    validate,
+    adminSettingsController.updateDlcCreateFee
+);
+router.get(
+    "/dlc/keys",
+    dlcValidator.listKeys,
+    validate,
+    adminDlcController.listKeys
+);
+router.get("/dlc/coin-wallet", adminDlcController.getCoinWallet);
+router.get(
+    "/dlc/keys/:id",
+    dlcValidator.keyId,
+    validate,
+    adminDlcController.getKey
+);
+router.post(
+    "/dlc/keys/:id/refresh",
+    dlcValidator.keyId,
+    validate,
+    adminDlcController.refreshKey
+);
+router.post(
+    "/dlc/keys/:id/unregister",
+    dlcValidator.keyId,
+    validate,
+    adminDlcController.unregisterKey
+);
+router.post(
+    "/dlc/keys/:id/lock",
+    dlcValidator.keyId,
+    dlcValidator.lockBody,
+    validate,
+    adminDlcController.lockKey
+);
+router.post(
+    "/dlc/keys/:id/unlock",
+    dlcValidator.keyId,
+    dlcValidator.lockBody,
+    validate,
+    adminDlcController.unlockKey
+);
+router.post(
+    "/dlc/keys/:id/reminders/text",
+    dlcValidator.keyId,
+    dlcValidator.reminderBody,
+    validate,
+    adminDlcController.sendTextReminder
+);
+router.post(
+    "/dlc/keys/:id/reminders/full-screen",
+    dlcValidator.keyId,
+    dlcValidator.reminderBody,
+    validate,
+    adminDlcController.sendFullScreenReminder
+);
+router.post(
+    "/dlc/keys/:id/unlock-code",
+    dlcValidator.keyId,
+    dlcValidator.unlockCodeBody,
+    validate,
+    adminDlcController.fetchUnlockCode
+);
+router.get(
+    "/dlc/keys/:id/actions",
+    dlcValidator.keyId,
+    validate,
+    adminDlcController.listActions
+);
+router.get(
+    "/dlc/keys/:id/controls",
+    dlcValidator.keyId,
+    validate,
+    adminDlcController.getControls
+);
+router.post("/dlc/recon", adminDlcController.reconKeys);
 router.get(
     "/payments",
     adminPaymentValidator.listPayments,
@@ -660,6 +744,18 @@ router.get(
     adminBannerValidator.listBanners,
     validate,
     adminBannerController.getBanners
+);
+router.get(
+    "/banners/:id/clicks",
+    adminBannerValidator.listClicks,
+    validate,
+    adminBannerController.getBannerClicks
+);
+router.post(
+    "/banners/:id/click",
+    adminBannerValidator.bannerId,
+    validate,
+    adminBannerController.recordBannerClick
 );
 router.get(
     "/banners/:id",

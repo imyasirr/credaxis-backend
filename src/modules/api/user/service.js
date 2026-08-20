@@ -424,3 +424,29 @@ exports.setMandateStory = async (userId, activated) => {
         activated: Boolean(user.mandateStoryActivated),
     };
 };
+
+/** DLC intro story: seen / activated flag on User */
+exports.getDlcStory = async (userId) => {
+    const user = await userRepository.findById(userId);
+    if (!user || user.isDeleted) {
+        throw new ApiError(404, "User not found");
+    }
+
+    return {
+        activated: Boolean(user.dlcStoryActivated),
+    };
+};
+
+exports.setDlcStory = async (userId, activated) => {
+    const user = await userRepository.findById(userId);
+    if (!user || user.isDeleted) {
+        throw new ApiError(404, "User not found");
+    }
+
+    user.dlcStoryActivated = Boolean(activated);
+    await user.save();
+
+    return {
+        activated: Boolean(user.dlcStoryActivated),
+    };
+};

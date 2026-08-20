@@ -96,3 +96,13 @@ exports.setMandateStory = [
         .withMessage("activated must be true or false")
         .toBoolean(),
 ];
+
+exports.setDlcStory = [
+    body("activated")
+        .exists()
+        .withMessage("activated is required")
+        .bail()
+        .isBoolean()
+        .withMessage("activated must be true or false")
+        .toBoolean(),
+];

@@ -87,3 +87,13 @@ exports.setMandateStory = asyncHandler(async (req, res) => {
     );
     return response.success(res, "Mandate story status updated", data);
 });
+
+exports.getDlcStory = asyncHandler(async (req, res) => {
+    const data = await service.getDlcStory(req.user.id);
+    return response.success(res, "DLC story status fetched", data);
+});
+
+exports.setDlcStory = asyncHandler(async (req, res) => {
+    const data = await service.setDlcStory(req.user.id, req.body.activated);
+    return response.success(res, "DLC story status updated", data);
+});

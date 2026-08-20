@@ -84,6 +84,12 @@ const userSchema = new mongoose.Schema(
             default: false,
         },
 
+        /** User app: DLC intro story seen / marked activated */
+        dlcStoryActivated: {
+            type: Boolean,
+            default: false,
+        },
+
         // Security
         failedLoginAttempts: {
             type: Number,

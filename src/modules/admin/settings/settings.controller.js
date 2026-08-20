@@ -54,3 +54,15 @@ exports.updateFirstTopupBonus = asyncHandler(async (req, res) => {
     );
     return response.success(res, "First top-up bonus setting updated", data);
 });
+
+exports.getDlcCreateFee = asyncHandler(async (_req, res) => {
+    const dlcFeeService = require("../../api/dlc/fee.service");
+    const data = await dlcFeeService.getDlcCreateFeeSetting();
+    return response.success(res, "DLC create fee fetched", data);
+});
+
+exports.updateDlcCreateFee = asyncHandler(async (req, res) => {
+    const dlcFeeService = require("../../api/dlc/fee.service");
+    const data = await dlcFeeService.updateDlcCreateFeeSetting(req.body);
+    return response.success(res, "DLC create fee updated", data);
+});

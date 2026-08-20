@@ -14,6 +14,7 @@ exports.formatBanner = (banner, { publicView = false } = {}) => {
 
     if (!publicView) {
         mapped.status = data.status;
+        mapped.clickCount = data.clickCount ?? 0;
         mapped.createdBy = data.createdBy || null;
         mapped.createdAt = data.createdAt;
         mapped.updatedAt = data.updatedAt;

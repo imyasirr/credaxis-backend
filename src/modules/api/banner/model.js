@@ -42,6 +42,12 @@ const bannerSchema = new mongoose.Schema(
             min: 0,
         },
 
+        clickCount: {
+            type: Number,
+            default: 0,
+            min: 0,
+        },
+
         createdBy: {
             type: mongoose.Schema.Types.ObjectId,
             ref: "User",

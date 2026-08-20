@@ -28,6 +28,7 @@ exports.updateCreditCheckFee = [
 
 /** Same shape as credit-check fee */
 exports.updateMandateCreateFee = exports.updateCreditCheckFee;
+exports.updateDlcCreateFee = exports.updateCreditCheckFee;
 
 exports.updateMandateInstallmentFee = [
     body("enabled").optional().isBoolean(),

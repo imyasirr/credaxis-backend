@@ -1,0 +1,27 @@
+exports.SETTING_KEY = "DLC_CREATE_FEE";
+
+exports.MDM_TYPE = "DLC";
+
+exports.CATALOGUE_STATES = ["UNDER_REVIEW", "APPROVED", "REJECTED"];
+
+exports.KEY_STATUSES = ["PENDING", "ACTIVE", "FINISHED", "REGISTERED", "CREATED"];
+
+exports.CONTROLS = {
+    LOCK: "LOCK",
+    TEXT_REMINDER: "TEXT_REMINDER",
+    FULL_SCREEN_REMINDER: "FULL_SCREEN_REMINDER",
+    UNLOCK_CODE: "UNLOCK_CODE",
+};
+
+exports.CONTROL_ACTIONS = {
+    LOCK: "LOCK",
+    UNLOCK: "UNLOCK",
+    SEND: "SEND",
+    FETCH: "FETCH",
+};
+
+exports.DEFAULT_DLC_CREATE_FEE = {
+    amount: 15,
+    currency: "INR",
+    enabled: true,
+};

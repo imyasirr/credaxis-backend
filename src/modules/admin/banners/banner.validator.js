@@ -28,12 +28,33 @@ exports.listBanners = [
     query("search").optional().trim(),
     query("sortBy")
         .optional()
-        .isIn(["title", "status", "sortOrder", "createdAt", "updatedAt"]),
+        .isIn([
+            "title",
+            "status",
+            "sortOrder",
+            "clickCount",
+            "createdAt",
+            "updatedAt",
+        ]),
     query("sortOrder").optional().isIn(["asc", "desc"]),
 ];
 
 exports.bannerId = [
     param("id").isMongoId().withMessage("Invalid banner id"),
+];
+
+exports.listClicks = [
+    param("id").isMongoId().withMessage("Invalid banner id"),
+    query("page").optional().isInt({ min: 1 }).withMessage("Invalid page"),
+    query("limit")
+        .optional()
+        .isInt({ min: 1, max: 100 })
+        .withMessage("Limit must be between 1 and 100"),
+    query("search").optional().trim(),
+    query("source")
+        .optional()
+        .isIn(["APP", "ADMIN", "ANONYMOUS"])
+        .withMessage("Source must be APP, ADMIN or ANONYMOUS"),
 ];
 
 exports.createBanner = [

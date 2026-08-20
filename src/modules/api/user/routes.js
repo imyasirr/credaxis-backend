@@ -97,4 +97,18 @@ router.patch(
     controller.setMandateStory
 );
 
+/** DLC intro story — seen / activated flag */
+router.get(
+    "/dlc-story",
+    requireAction(ACTIONS.PROFILE_READ),
+    controller.getDlcStory
+);
+router.patch(
+    "/dlc-story",
+    requireAction(ACTIONS.PROFILE_WRITE),
+    validator.setDlcStory,
+    validate,
+    controller.setDlcStory
+);
+
 module.exports = router;
