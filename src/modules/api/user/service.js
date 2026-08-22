@@ -222,8 +222,26 @@ exports.getDashboard = async (userId) => {
     const creditReportRepository = require("../creditReport/repository");
     const Mandate = require("../mandate/mandate.model");
     const { formatMandate } = require("../mandate/mapper");
+    const DlcKey = require("../dlc/model");
+    const { formatDlcKey } = require("../dlc/mapper");
     const userGamePlayService = require("../games/userGamePlay.service");
     const Kyc = require("../kyc/model");
+
+    const slimDlcKey = (doc) => {
+        const k = formatDlcKey(doc);
+        if (!k) return null;
+        return {
+            id: k.id,
+            customerName: k.customerName,
+            customerMobile: k.customerMobile,
+            manufacturer: k.manufacturer,
+            model: k.model,
+            imeiNo: k.imeiNo,
+            status: k.status,
+            isLocked: k.isLocked,
+            createdAt: k.createdAt,
+        };
+    };
 
     const slimMandate = (doc) => {
         const m = formatMandate(doc);
@@ -278,6 +296,9 @@ exports.getDashboard = async (userId) => {
         latestCredit,
         mandateAgg,
         recentMandates,
+        dlcAgg,
+        dlcLockedCount,
+        recentDlcKeys,
         games,
         banners,
     ] = await Promise.all([
@@ -316,6 +337,30 @@ exports.getDashboard = async (userId) => {
                     .limit(3),
             []
         ),
+        soft(
+            () =>
+                DlcKey.aggregate([
+                    { $match: { user: user._id } },
+                    { $group: { _id: "$status", count: { $sum: 1 } } },
+                ]),
+            []
+        ),
+        soft(
+            () =>
+                DlcKey.countDocuments({
+                    user: userId,
+                    isLocked: true,
+                    isDeleted: { $ne: true },
+                }),
+            0
+        ),
+        soft(
+            () =>
+                DlcKey.find({ user: userId })
+                    .sort({ createdAt: -1 })
+                    .limit(3),
+            []
+        ),
         soft(() => userGamePlayService.getMyGames(userId), {
             games: [],
             totalAvailablePlays: 0,
@@ -329,6 +374,14 @@ exports.getDashboard = async (userId) => {
         const key = row._id || "UNKNOWN";
         byState[key] = row.count;
         mandateTotal += row.count;
+    }
+
+    const dlcByStatus = {};
+    let dlcTotal = 0;
+    for (const row of dlcAgg || []) {
+        const key = row._id || "UNKNOWN";
+        dlcByStatus[key] = row.count;
+        dlcTotal += row.count;
     }
 
     const profileData = formatProfile(profile);
@@ -392,6 +445,13 @@ exports.getDashboard = async (userId) => {
             activatedCount: byState.ACTIVATED || 0,
             createdCount: byState.CREATED || 0,
             recent: (recentMandates || []).map(slimMandate).filter(Boolean),
+        },
+        dlc: {
+            total: dlcTotal,
+            byStatus: dlcByStatus,
+            lockedCount: dlcLockedCount || 0,
+            activeCount: dlcByStatus.ACTIVE || 0,
+            recent: (recentDlcKeys || []).map(slimDlcKey).filter(Boolean),
         },
         games,
         banners,
