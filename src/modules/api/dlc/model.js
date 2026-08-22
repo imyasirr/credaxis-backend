@@ -5,7 +5,8 @@ const dlcKeySchema = new mongoose.Schema(
         user: {
             type: mongoose.Schema.Types.ObjectId,
             ref: "User",
-            required: true,
+            required: false,
+            default: null,
             index: true,
         },
 
@@ -27,6 +28,10 @@ const dlcKeySchema = new mongoose.Schema(
 
         customerName: { type: String, trim: true, default: null },
         customerMobile: { type: String, trim: true, default: null, index: true },
+
+        /** Snapshot of CredAxis user (merchant) who registered DLC for the customer */
+        merchantName: { type: String, trim: true, default: null },
+        merchantMobile: { type: String, trim: true, default: null, index: true },
 
         manufacturer: { type: String, trim: true, default: null },
         model: { type: String, trim: true, default: null },
@@ -54,7 +59,7 @@ const dlcKeySchema = new mongoose.Schema(
         lastSyncedAt: { type: Date, default: null },
         source: {
             type: String,
-            enum: ["API", "ADMIN", "SYSTEM"],
+            enum: ["API", "ADMIN", "SYSTEM", "RECON"],
             default: "API",
         },
     },

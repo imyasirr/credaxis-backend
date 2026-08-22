@@ -460,6 +460,13 @@ router.get(
     adminDlcController.getKey
 );
 router.post(
+    "/dlc/keys/:id/assign-merchant",
+    dlcValidator.keyId,
+    dlcValidator.assignMerchant,
+    validate,
+    adminDlcController.assignMerchant
+);
+router.post(
     "/dlc/keys/:id/refresh",
     dlcValidator.keyId,
     validate,

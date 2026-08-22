@@ -11,6 +11,22 @@ const router = express.Router();
 
 router.use(auth);
 
+router.get(
+    "/collections/summary",
+    requireAction(ACTIONS.MANDATE_READ),
+    validator.collectionsSummary,
+    validate,
+    controller.getCollectionsSummary
+);
+
+router.get(
+    "/collections",
+    requireAction(ACTIONS.MANDATE_READ),
+    validator.listCollections,
+    validate,
+    controller.listMandateCollections
+);
+
 router.post(
     "/",
     requireAction(ACTIONS.MANDATE_WRITE),
@@ -25,6 +41,14 @@ router.get(
     validator.listMandates,
     validate,
     controller.listMandates
+);
+
+router.get(
+    "/:id/collections",
+    requireAction(ACTIONS.MANDATE_READ),
+    validator.mandateId,
+    validate,
+    controller.getMandateCollections
 );
 
 router.get(

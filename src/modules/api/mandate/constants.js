@@ -31,6 +31,23 @@ exports.INSTALLMENT_STATES = [
     "SETTLEMENT_FAILED",
 ];
 
+/** Money collected from customer (still may be pending merchant settlement) */
+exports.RECEIVED_INSTALLMENT_STATES = [
+    "COLLECTION_SUCCESS",
+    "SETTLEMENT_INITIATED",
+    "SETTLEMENT_SUCCESS",
+];
+
+/** Money settled to merchant */
+exports.SETTLED_INSTALLMENT_STATES = ["SETTLEMENT_SUCCESS"];
+
+exports.PENDING_INSTALLMENT_STATES = ["CREATED", "COLLECTION_INITIATED"];
+
+exports.FAILED_INSTALLMENT_STATES = [
+    "COLLECTION_FAILED",
+    "SETTLEMENT_FAILED",
+];
+
 exports.PARTY_TAGS = [
     "CUSTOMER_COLLECTION",
     "MERCHANT_SETTLEMENT",

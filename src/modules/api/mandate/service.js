@@ -9,6 +9,12 @@ const Partner = require("../partner/model");
 const gateway = require("./rocketpay.gateway");
 const { formatMandate, formatInstallment } = require("./mapper");
 const ApiError = require("../../../utils/ApiError");
+const {
+    RECEIVED_INSTALLMENT_STATES,
+    SETTLED_INSTALLMENT_STATES,
+    PENDING_INSTALLMENT_STATES,
+    FAILED_INSTALLMENT_STATES,
+} = require("./constants");
 
 const generateMandateReference = (userId = null) => {
     const prefix = "MAND";
@@ -743,4 +749,378 @@ exports.retryInstallment = async (userId, id, body, ipAddress) => {
         { userId, ipAddress, source: "API" }
     );
     return { installment: formatInstallment(synced), rocketpay: data };
+};
+
+const roundMoney = (value) => Math.round((Number(value) || 0) * 100) / 100;
+
+const emptyMoneyBucket = () => ({
+    amount: 0,
+    count: 0,
+});
+
+const classifyInstallmentMoney = (state, amount) => {
+    const amt = Number(amount) || 0;
+    const s = String(state || "").toUpperCase();
+    return {
+        amount: amt,
+        isExpected: s !== "TERMINATED",
+        isReceived: RECEIVED_INSTALLMENT_STATES.includes(s),
+        isSettled: SETTLED_INSTALLMENT_STATES.includes(s),
+        isPending: PENDING_INSTALLMENT_STATES.includes(s),
+        isFailed: FAILED_INSTALLMENT_STATES.includes(s),
+        isTerminated: s === "TERMINATED",
+    };
+};
+
+const accumulateMoney = (bucket, row) => {
+    const next = {
+        expected: { ...bucket.expected },
+        received: { ...bucket.received },
+        settled: { ...bucket.settled },
+        pending: { ...bucket.pending },
+        failed: { ...bucket.failed },
+        terminated: { ...bucket.terminated },
+        total: { ...bucket.total },
+    };
+
+    next.total.amount = roundMoney(next.total.amount + row.amount);
+    next.total.count += 1;
+
+    if (row.isTerminated) {
+        next.terminated.amount = roundMoney(next.terminated.amount + row.amount);
+        next.terminated.count += 1;
+        return next;
+    }
+
+    if (row.isExpected) {
+        next.expected.amount = roundMoney(next.expected.amount + row.amount);
+        next.expected.count += 1;
+    }
+    if (row.isReceived) {
+        next.received.amount = roundMoney(next.received.amount + row.amount);
+        next.received.count += 1;
+    }
+    if (row.isSettled) {
+        next.settled.amount = roundMoney(next.settled.amount + row.amount);
+        next.settled.count += 1;
+    }
+    if (row.isPending) {
+        next.pending.amount = roundMoney(next.pending.amount + row.amount);
+        next.pending.count += 1;
+    }
+    if (row.isFailed) {
+        next.failed.amount = roundMoney(next.failed.amount + row.amount);
+        next.failed.count += 1;
+    }
+
+    return next;
+};
+
+const finalizeMoneySummary = (bucket) => {
+    const expectedAmount = roundMoney(bucket.expected.amount);
+    const receivedAmount = roundMoney(bucket.received.amount);
+    return {
+        currency: "INR",
+        /** Installment totals merchant should collect (excludes TERMINATED) */
+        expectedAmount,
+        expectedCount: bucket.expected.count,
+        /** Collected from customer (COLLECTION_SUCCESS / settlement pipeline) */
+        receivedAmount,
+        receivedCount: bucket.received.count,
+        /** Settled to merchant bank (SETTLEMENT_SUCCESS) */
+        settledAmount: roundMoney(bucket.settled.amount),
+        settledCount: bucket.settled.count,
+        /** Still due / in progress */
+        pendingAmount: roundMoney(bucket.pending.amount),
+        pendingCount: bucket.pending.count,
+        /** Collection or settlement failed */
+        failedAmount: roundMoney(bucket.failed.amount),
+        failedCount: bucket.failed.count,
+        terminatedAmount: roundMoney(bucket.terminated.amount),
+        terminatedCount: bucket.terminated.count,
+        /** expected − received */
+        remainingAmount: roundMoney(expectedAmount - receivedAmount),
+        totalInstallments: bucket.total.count,
+    };
+};
+
+const emptyMoneySummary = () =>
+    finalizeMoneySummary({
+        expected: emptyMoneyBucket(),
+        received: emptyMoneyBucket(),
+        settled: emptyMoneyBucket(),
+        pending: emptyMoneyBucket(),
+        failed: emptyMoneyBucket(),
+        terminated: emptyMoneyBucket(),
+        total: emptyMoneyBucket(),
+    });
+
+const buildInstallmentMatchForUser = async (userId, query = {}) => {
+    const mandateFilter = { user: userId, deleted: { $ne: true } };
+    if (query.mandateId && isObjectId(query.mandateId)) {
+        mandateFilter._id = query.mandateId;
+    }
+    if (query.state) {
+        mandateFilter.state = String(query.state).toUpperCase();
+    }
+    if (query.customerMobile) {
+        const mobile = String(query.customerMobile).trim();
+        mandateFilter.customerMobile = { $regex: mobile, $options: "i" };
+    }
+    if (query.search) {
+        const s = String(query.search).trim();
+        mandateFilter.$or = [
+            { customerMobile: { $regex: s, $options: "i" } },
+            { customerName: { $regex: s, $options: "i" } },
+            { rocketpayId: { $regex: s, $options: "i" } },
+            { referenceId: { $regex: s, $options: "i" } },
+        ];
+    }
+
+    const mandates = await Mandate.find(mandateFilter)
+        .select("_id rocketpayId customerName customerMobile state frequency mode approvalAmount installmentCount createdAt")
+        .sort({ createdAt: -1 })
+        .lean();
+
+    return mandates;
+};
+
+/**
+ * Merchant collection overview from local installments.
+ * expected = aane chahiye, received = aa gaye (customer se collect).
+ */
+exports.getCollectionsSummary = async (userId, query = {}) => {
+    const mandates = await buildInstallmentMatchForUser(userId, query);
+    if (!mandates.length) {
+        return {
+            summary: emptyMoneySummary(),
+            mandateCount: 0,
+        };
+    }
+
+    const mandateIds = mandates.map((m) => m._id);
+    const rocketpayIds = mandates.map((m) => m.rocketpayId).filter(Boolean);
+
+    const installments = await Installment.find({
+        deleted: { $ne: true },
+        $or: [
+            { mandate: { $in: mandateIds } },
+            ...(rocketpayIds.length
+                ? [{ rocketpayMandateId: { $in: rocketpayIds } }]
+                : []),
+        ],
+    })
+        .select("_id rocketpayId mandate rocketpayMandateId amount state")
+        .lean();
+
+    const mandateIdSet = new Set(mandateIds.map(String));
+    const rpIdSet = new Set(rocketpayIds.map(String));
+
+    let bucket = {
+        expected: emptyMoneyBucket(),
+        received: emptyMoneyBucket(),
+        settled: emptyMoneyBucket(),
+        pending: emptyMoneyBucket(),
+        failed: emptyMoneyBucket(),
+        terminated: emptyMoneyBucket(),
+        total: emptyMoneyBucket(),
+    };
+
+    const seen = new Set();
+    for (const inst of installments) {
+        const idKey = String(inst._id || inst.rocketpayId || "");
+        if (idKey && seen.has(idKey)) continue;
+        if (idKey) seen.add(idKey);
+
+        const belongs =
+            (inst.mandate && mandateIdSet.has(String(inst.mandate))) ||
+            (inst.rocketpayMandateId &&
+                rpIdSet.has(String(inst.rocketpayMandateId)));
+        if (!belongs) continue;
+        bucket = accumulateMoney(
+            bucket,
+            classifyInstallmentMoney(inst.state, inst.amount)
+        );
+    }
+
+    return {
+        summary: finalizeMoneySummary(bucket),
+        mandateCount: mandates.length,
+    };
+};
+
+/**
+ * Per-mandate expected vs received (paginated).
+ */
+exports.listMandateCollections = async (userId, query = {}) => {
+    const page = Number(query.page) || 1;
+    const limit = Math.min(Number(query.limit) || 20, 100);
+    const skip = (page - 1) * limit;
+
+    const mandates = await buildInstallmentMatchForUser(userId, query);
+    const total = mandates.length;
+    const pageMandates = mandates.slice(skip, skip + limit);
+
+    if (!pageMandates.length) {
+        return {
+            summary: (await exports.getCollectionsSummary(userId, query)).summary,
+            mandates: [],
+            pagination: {
+                page,
+                limit,
+                total,
+                totalPages: Math.ceil(total / limit) || 0,
+            },
+        };
+    }
+
+    const mandateIds = pageMandates.map((m) => m._id);
+    const rocketpayIds = pageMandates.map((m) => m.rocketpayId).filter(Boolean);
+
+    const installments = await Installment.find({
+        deleted: { $ne: true },
+        $or: [
+            { mandate: { $in: mandateIds } },
+            ...(rocketpayIds.length
+                ? [{ rocketpayMandateId: { $in: rocketpayIds } }]
+                : []),
+        ],
+    })
+        .select(
+            "mandate rocketpayMandateId amount state dueDate scheduleDate rocketpayId"
+        )
+        .sort({ dueDate: 1, createdAt: 1 })
+        .lean();
+
+    const byMandate = new Map();
+    for (const m of pageMandates) {
+        byMandate.set(String(m._id), []);
+        if (m.rocketpayId) {
+            byMandate.set(`rp:${m.rocketpayId}`, []);
+        }
+    }
+
+    for (const inst of installments) {
+        const key = inst.mandate
+            ? String(inst.mandate)
+            : inst.rocketpayMandateId
+              ? `rp:${inst.rocketpayMandateId}`
+              : null;
+        if (!key || !byMandate.has(key)) continue;
+        byMandate.get(key).push(inst);
+    }
+
+    const rows = pageMandates.map((m) => {
+        const list =
+            byMandate.get(String(m._id)) ||
+            (m.rocketpayId ? byMandate.get(`rp:${m.rocketpayId}`) : []) ||
+            [];
+
+        let bucket = {
+            expected: emptyMoneyBucket(),
+            received: emptyMoneyBucket(),
+            settled: emptyMoneyBucket(),
+            pending: emptyMoneyBucket(),
+            failed: emptyMoneyBucket(),
+            terminated: emptyMoneyBucket(),
+            total: emptyMoneyBucket(),
+        };
+
+        for (const inst of list) {
+            bucket = accumulateMoney(
+                bucket,
+                classifyInstallmentMoney(inst.state, inst.amount)
+            );
+        }
+
+        const money = finalizeMoneySummary(bucket);
+        return {
+            id: m._id,
+            rocketpayId: m.rocketpayId,
+            customerName: m.customerName || null,
+            customerMobile: m.customerMobile || null,
+            state: m.state,
+            frequency: m.frequency,
+            mode: m.mode,
+            approvalAmount: m.approvalAmount,
+            installmentCount: m.installmentCount,
+            createdAt: m.createdAt,
+            ...money,
+        };
+    });
+
+    const overall = await exports.getCollectionsSummary(userId, query);
+
+    return {
+        summary: overall.summary,
+        mandates: rows,
+        pagination: {
+            page,
+            limit,
+            total,
+            totalPages: Math.ceil(total / limit) || 0,
+        },
+    };
+};
+
+/**
+ * One mandate: totals + each installment money status.
+ */
+exports.getMandateCollections = async (userId, mandateId) => {
+    const local = await exports.resolveMandate(mandateId, { userId });
+
+    const installments = await Installment.find({
+        deleted: { $ne: true },
+        $or: [
+            { mandate: local._id },
+            ...(local.rocketpayId
+                ? [{ rocketpayMandateId: String(local.rocketpayId) }]
+                : []),
+        ],
+    })
+        .sort({ dueDate: 1, createdAt: 1 })
+        .lean();
+
+    let bucket = {
+        expected: emptyMoneyBucket(),
+        received: emptyMoneyBucket(),
+        settled: emptyMoneyBucket(),
+        pending: emptyMoneyBucket(),
+        failed: emptyMoneyBucket(),
+        terminated: emptyMoneyBucket(),
+        total: emptyMoneyBucket(),
+    };
+
+    const items = installments.map((inst) => {
+        const flags = classifyInstallmentMoney(inst.state, inst.amount);
+        bucket = accumulateMoney(bucket, flags);
+        return {
+            id: inst._id,
+            rocketpayId: inst.rocketpayId,
+            state: inst.state,
+            amount: Number(inst.amount) || 0,
+            dueDate: inst.dueDate,
+            scheduleDate: inst.scheduleDate,
+            expected: flags.isExpected,
+            received: flags.isReceived,
+            settled: flags.isSettled,
+            pending: flags.isPending,
+            failed: flags.isFailed,
+        };
+    });
+
+    return {
+        mandate: {
+            id: local._id,
+            rocketpayId: local.rocketpayId,
+            customerName: local.customerName,
+            customerMobile: local.customerMobile,
+            state: local.state,
+            frequency: local.frequency,
+            approvalAmount: local.approvalAmount,
+            installmentCount: local.installmentCount,
+        },
+        summary: finalizeMoneySummary(bucket),
+        installments: items,
+    };
 };

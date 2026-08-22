@@ -2,7 +2,8 @@ const mongoose = require("mongoose");
 const DlcKey = require("./model");
 const gateway = require("./gateway");
 const feeService = require("./fee.service");
-const { formatCatalogue, formatDlcKey, formatCoinWallet, formatUnlockCode } = require("./mapper");
+const UserProfile = require("../user/profile.model");
+const { formatCatalogue, formatDlcKey, formatCoinWallet, formatUnlockCode, formatDlcCustomer } = require("./mapper");
 const ApiError = require("../../../utils/ApiError");
 const { MDM_TYPE, CONTROLS, CONTROL_ACTIONS } = require("./constants");
 
@@ -11,6 +12,41 @@ const isObjectId = (value) =>
     String(new mongoose.Types.ObjectId(value)) === String(value);
 
 const digitsOnly = (value) => String(value || "").replace(/\D/g, "");
+
+const attachMerchantNames = async (docs) => {
+    const userIds = docs
+        .map((d) => d.user?._id || d.user)
+        .filter(Boolean)
+        .map((id) => String(id));
+    if (!userIds.length) return docs;
+
+    const profiles = await UserProfile.find({
+        user: { $in: [...new Set(userIds)] },
+    }).select("user firstName lastName");
+
+    const byUser = new Map(
+        profiles.map((p) => [
+            String(p.user),
+            [p.firstName, p.lastName].filter(Boolean).join(" ").trim(),
+        ])
+    );
+
+    for (const doc of docs) {
+        const uid = doc.user?._id || doc.user;
+        if (!uid) continue;
+        const name = byUser.get(String(uid));
+        if (!name) continue;
+        if (doc.user && typeof doc.user === "object" && doc.user._id) {
+            doc.user.fullName = name;
+            if (typeof doc.user.set === "function") {
+                doc.user.set("fullName", name, { strict: false });
+            } else {
+                doc.user.fullName = name;
+            }
+        }
+    }
+    return docs;
+};
 
 const normalizeMobile = (mobile) => {
     const raw = String(mobile || "").trim();
@@ -82,8 +118,29 @@ const persistFromRocketPay = async ({
     };
     applySuperKey(set, superKey);
     applyKeyEntity(set, key);
+
+    // Never wipe merchant link on recon/refresh
     if (userId && !existing?.user) {
         set.user = userId;
+    } else if (existing?.user && set.user === undefined) {
+        // keep existing user — do not $unset
+    }
+    if (existing?.merchantName && set.merchantName == null) {
+        set.merchantName = existing.merchantName;
+    }
+    if (existing?.merchantMobile && set.merchantMobile == null) {
+        set.merchantMobile = existing.merchantMobile;
+    }
+    if (existing?.customerName && !set.customerName) {
+        set.customerName = existing.customerName;
+    }
+    if (existing?.customerMobile && !set.customerMobile) {
+        set.customerMobile = existing.customerMobile;
+    }
+
+    const setOnInsert = {};
+    if (!existing && !userId && set.user === undefined) {
+        setOnInsert.user = null;
     }
 
     const filter = existing
@@ -92,11 +149,33 @@ const persistFromRocketPay = async ({
           ? { rocketpayKeyId: String(keyId) }
           : { rocketpaySuperKeyId: String(superKey.id) };
 
-    return DlcKey.findOneAndUpdate(
-        filter,
-        { $set: set },
-        { upsert: true, new: true, setDefaultsOnInsert: true }
+    const update = { $set: set };
+    if (Object.keys(setOnInsert).length) {
+        update.$setOnInsert = setOnInsert;
+    }
+
+    return DlcKey.findOneAndUpdate(filter, update, {
+        upsert: true,
+        new: true,
+        setDefaultsOnInsert: true,
+        runValidators: true,
+    });
+};
+
+const buildMerchantSnapshot = async (userId) => {
+    if (!userId) return { merchantName: null, merchantMobile: null };
+    const User = require("../user/model");
+    const user = await User.findById(userId).select("mobile email");
+    const profile = await UserProfile.findOne({ user: userId }).select(
+        "firstName lastName"
     );
+    const name = profile
+        ? [profile.firstName, profile.lastName].filter(Boolean).join(" ").trim()
+        : "";
+    return {
+        merchantName: name || null,
+        merchantMobile: user?.mobile || null,
+    };
 };
 
 const requireKeyId = (local) => {
@@ -228,6 +307,8 @@ exports.createKey = async (userId, body) => {
             }
         }
 
+        const merchantSnap = await buildMerchantSnapshot(userId);
+
         const doc = await persistFromRocketPay({
             userId,
             superKey,
@@ -245,6 +326,8 @@ exports.createKey = async (userId, body) => {
                     walletDebit?.transaction?.transactionId ||
                     walletDebit?.transactionDoc?.transactionId ||
                     null,
+                merchantName: merchantSnap.merchantName,
+                merchantMobile: merchantSnap.merchantMobile,
             },
             source: "API",
         });
@@ -282,6 +365,15 @@ exports.listMyKeys = async (userId, query = {}) => {
     const skip = (page - 1) * limit;
     const filter = { user: userId };
     if (query.status) filter.status = String(query.status).toUpperCase();
+    if (query.locked === "true" || query.locked === "1") filter.isLocked = true;
+    if (query.locked === "false" || query.locked === "0") filter.isLocked = false;
+    if (query.customerMobile) {
+        const mobile = String(query.customerMobile).trim();
+        filter.customerMobile = new RegExp(
+            digitsOnly(mobile) || mobile,
+            "i"
+        );
+    }
     if (query.search) {
         const q = String(query.search).trim();
         filter.$or = [
@@ -290,6 +382,8 @@ exports.listMyKeys = async (userId, query = {}) => {
             { customerMobile: new RegExp(q, "i") },
             { customerName: new RegExp(q, "i") },
             { rocketpayKeyId: new RegExp(q, "i") },
+            { manufacturer: new RegExp(q, "i") },
+            { model: new RegExp(q, "i") },
         ];
     }
 
@@ -305,6 +399,169 @@ exports.listMyKeys = async (userId, query = {}) => {
             limit,
             total,
             totalPages: Math.ceil(total / limit) || 0,
+        },
+    };
+};
+
+/**
+ * Merchant's DLC customers — one row per customer mobile.
+ * App "Customers" screen: kis pe DLC lagaya.
+ */
+exports.listMyCustomers = async (userId, query = {}) => {
+    const page = Number(query.page) || 1;
+    const limit = Math.min(Number(query.limit) || 20, 100);
+    const skip = (page - 1) * limit;
+
+    const match = {
+        user: new mongoose.Types.ObjectId(userId),
+        customerMobile: { $nin: [null, ""] },
+    };
+
+    if (query.locked === "true" || query.locked === "1") {
+        match.isLocked = true;
+    }
+    if (query.search) {
+        const q = String(query.search).trim();
+        match.$or = [
+            { customerMobile: new RegExp(q, "i") },
+            { customerName: new RegExp(q, "i") },
+            { imeiNo: new RegExp(q, "i") },
+            { manufacturer: new RegExp(q, "i") },
+            { model: new RegExp(q, "i") },
+        ];
+    }
+
+    const [facet] = await DlcKey.aggregate([
+        { $match: match },
+        { $sort: { createdAt: -1 } },
+        {
+            $group: {
+                _id: "$customerMobile",
+                customerName: { $first: "$customerName" },
+                customerMobile: { $first: "$customerMobile" },
+                deviceCount: { $sum: 1 },
+                lockedCount: {
+                    $sum: { $cond: [{ $eq: ["$isLocked", true] }, 1, 0] },
+                },
+                activeCount: {
+                    $sum: {
+                        $cond: [
+                            {
+                                $in: [
+                                    { $toUpper: { $ifNull: ["$status", ""] } },
+                                    ["ACTIVE", "PENDING", "REGISTERED"],
+                                ],
+                            },
+                            1,
+                            0,
+                        ],
+                    },
+                },
+                latestStatus: { $first: "$status" },
+                latestKeyId: { $first: "$_id" },
+                latestImei: { $first: "$imeiNo" },
+                latestManufacturer: { $first: "$manufacturer" },
+                latestModel: { $first: "$model" },
+                lastRegisteredAt: { $first: "$createdAt" },
+            },
+        },
+        { $sort: { lastRegisteredAt: -1 } },
+        {
+            $facet: {
+                items: [{ $skip: skip }, { $limit: limit }],
+                totalCount: [{ $count: "count" }],
+            },
+        },
+    ]);
+
+    const items = facet?.items || [];
+    const total = facet?.totalCount?.[0]?.count || 0;
+
+    return {
+        customers: items.map((row) =>
+            formatDlcCustomer({
+                id: digitsOnly(row.customerMobile) || row.customerMobile,
+                customerName: row.customerName,
+                customerMobile: row.customerMobile,
+                deviceCount: row.deviceCount,
+                lockedCount: row.lockedCount,
+                activeCount: row.activeCount,
+                latestStatus: row.latestStatus,
+                latestKeyId: row.latestKeyId,
+                latestImei: row.latestImei,
+                latestDevice: [row.latestManufacturer, row.latestModel]
+                    .filter(Boolean)
+                    .join(" "),
+                lastRegisteredAt: row.lastRegisteredAt,
+            })
+        ),
+        pagination: {
+            page,
+            limit,
+            total,
+            totalPages: Math.ceil(total / limit) || 0,
+        },
+    };
+};
+
+/**
+ * One customer detail for merchant — profile + all DLC devices.
+ * `mobile` can be +91… or digits; `id` can be DLC key id to resolve customer.
+ */
+exports.getMyCustomer = async (userId, query = {}) => {
+    const filter = { user: userId };
+    let mobile = query.mobile ? String(query.mobile).trim() : "";
+
+    if (!mobile && query.id) {
+        const key = await exports.resolveDlcKey(query.id, { userId });
+        mobile = key.customerMobile || "";
+        if (!mobile) {
+            return {
+                customer: {
+                    name: key.customerName || null,
+                    mobile: null,
+                },
+                devices: [formatDlcKey(key)],
+                summary: {
+                    deviceCount: 1,
+                    lockedCount: key.isLocked ? 1 : 0,
+                },
+            };
+        }
+    }
+
+    if (!mobile) {
+        throw new ApiError(400, "mobile or id is required");
+    }
+
+    const digits = digitsOnly(mobile);
+    filter.$or = [
+        { customerMobile: mobile },
+        ...(digits
+            ? [{ customerMobile: new RegExp(`${digits}$`) }]
+            : []),
+    ];
+
+    const devices = await DlcKey.find(filter).sort({ createdAt: -1 });
+    if (!devices.length) {
+        throw new ApiError(404, "DLC customer not found");
+    }
+
+    const first = devices[0];
+    return {
+        customer: {
+            name: first.customerName || null,
+            mobile: first.customerMobile || null,
+        },
+        devices: devices.map(formatDlcKey),
+        summary: {
+            deviceCount: devices.length,
+            lockedCount: devices.filter((d) => d.isLocked).length,
+            activeCount: devices.filter((d) =>
+                ["ACTIVE", "PENDING", "REGISTERED"].includes(
+                    String(d.status || "").toUpperCase()
+                )
+            ).length,
         },
     };
 };
@@ -364,10 +621,30 @@ const applyLockAction = async (userId, id, actionName, body = {}) => {
     });
 };
 
-const buildOptionalMessageBody = (body = {}) => {
+const resolveMerchantContact = async (local, userId = null) => {
+    let name = String(local?.merchantName || "").trim() || null;
+    let mobile = String(local?.merchantMobile || "").trim() || null;
+
+    const merchantUserId = local?.user || userId || null;
+    if ((!name || !mobile) && merchantUserId) {
+        const snap = await buildMerchantSnapshot(merchantUserId);
+        name = name || snap.merchantName;
+        mobile = mobile || snap.merchantMobile;
+    }
+
+    return { merchantName: name, merchantMobile: mobile };
+};
+
+const buildOptionalMessageBody = (body = {}, merchant = {}) => {
+    const title = String(
+        body.title || merchant.merchantName || ""
+    ).trim();
+    const message = String(
+        body.message || merchant.merchantMobile || ""
+    ).trim();
     const payload = {};
-    if (body.title) payload.title = String(body.title).trim();
-    if (body.message) payload.message = String(body.message).trim();
+    if (title) payload.title = title;
+    if (message) payload.message = message;
     return Object.keys(payload).length ? payload : null;
 };
 
@@ -393,7 +670,8 @@ const applyControlAction = async (
         }
         payload = { code };
     } else {
-        payload = buildOptionalMessageBody(body);
+        const merchant = await resolveMerchantContact(local, userId);
+        payload = buildOptionalMessageBody(body, merchant);
     }
 
     const data = await gateway.applyControl(
@@ -470,6 +748,24 @@ exports.getControls = async (userId, id) => {
     return { controls: data, rocketpay: data };
 };
 
+const STALE_SYNC_MS = 15 * 60 * 1000;
+const MAX_STALE_REFRESH = 8;
+
+const refreshLocalKeyFromRocketPay = async (local) => {
+    if (!local?.rocketpayKeyId) return local;
+    let key;
+    try {
+        key = await gateway.refreshKey(local.rocketpayKeyId);
+    } catch (_err) {
+        key = await gateway.getKey(local.rocketpayKeyId);
+    }
+    return persistFromRocketPay({
+        userId: local.user || null,
+        key,
+        source: local.source === "RECON" ? "RECON" : "SYSTEM",
+    });
+};
+
 exports.listAdminKeys = async (query = {}) => {
     const page = Number(query.page) || 1;
     const limit = Math.min(Number(query.limit) || 20, 100);
@@ -481,16 +777,43 @@ exports.listAdminKeys = async (query = {}) => {
     if (query.locked === "false" || query.locked === "0") filter.isLocked = false;
     if (query.search) {
         const q = String(query.search).trim();
+        const User = require("../user/model");
+        const merchants = await User.find({
+            mobile: { $regex: q, $options: "i" },
+            isDeleted: { $ne: true },
+        })
+            .select("_id")
+            .limit(50);
         filter.$or = [
             { imeiNo: new RegExp(q, "i") },
             { imeiNo2: new RegExp(q, "i") },
             { customerMobile: new RegExp(q, "i") },
             { customerName: new RegExp(q, "i") },
             { rocketpayKeyId: new RegExp(q, "i") },
+            ...(merchants.length
+                ? [{ user: { $in: merchants.map((u) => u._id) } }]
+                : []),
         ];
     }
 
-    const [items, total] = await Promise.all([
+    // First open / empty DB: one auto recon so admin need not sync manually every time
+    const autoSync =
+        query.autoSync === "true" ||
+        query.autoSync === "1" ||
+        query.autoSync === undefined ||
+        query.autoSync === "";
+    if (autoSync) {
+        const totalAll = await DlcKey.countDocuments({});
+        if (totalAll === 0) {
+            try {
+                await exports.reconKeys();
+            } catch (err) {
+                console.error("[DLC] auto recon on empty DB failed:", err.message);
+            }
+        }
+    }
+
+    let [items, total] = await Promise.all([
         DlcKey.find(filter)
             .populate("user", "mobile email status")
             .sort({ createdAt: -1 })
@@ -498,6 +821,43 @@ exports.listAdminKeys = async (query = {}) => {
             .limit(limit),
         DlcKey.countDocuments(filter),
     ]);
+
+    // Soft-refresh stale rows on this page (status/lock) — no full RocketPay list sync
+    const refreshStale =
+        query.refreshStale !== "false" && query.refreshStale !== "0";
+    if (refreshStale && items.length) {
+        const now = Date.now();
+        const stale = items
+            .filter((doc) => {
+                if (!doc.rocketpayKeyId) return false;
+                if (!doc.lastSyncedAt) return true;
+                return now - new Date(doc.lastSyncedAt).getTime() > STALE_SYNC_MS;
+            })
+            .slice(0, MAX_STALE_REFRESH);
+
+        if (stale.length) {
+            await Promise.all(
+                stale.map(async (doc) => {
+                    try {
+                        await refreshLocalKeyFromRocketPay(doc);
+                    } catch (err) {
+                        console.error(
+                            "[DLC] stale refresh failed:",
+                            doc.rocketpayKeyId,
+                            err.message
+                        );
+                    }
+                })
+            );
+            items = await DlcKey.find(filter)
+                .populate("user", "mobile email status")
+                .sort({ createdAt: -1 })
+                .skip(skip)
+                .limit(limit);
+        }
+    }
+
+    await attachMerchantNames(items);
 
     return {
         keys: items.map(formatDlcKey),
@@ -516,32 +876,85 @@ exports.getAdminKey = async (id, { refresh = false } = {}) => {
         return exports.adminRefreshKey(id);
     }
     await local.populate("user", "mobile email status");
+    await attachMerchantNames([local]);
     return { key: formatDlcKey(local) };
 };
 
 exports.adminRefreshKey = async (id) => {
     const local = await exports.resolveDlcKey(id);
-    return exports.refreshKey(local.user, id);
+    return exports.refreshKey(local.user || null, id);
 };
 
 exports.adminUnregisterKey = async (id) => {
     const local = await exports.resolveDlcKey(id);
+    if (!local.user) {
+        const keyId = requireKeyId(local);
+        const data = await gateway.unregisterKey(keyId);
+        const doc = await persistFromRocketPay({
+            userId: null,
+            key: null,
+            defaults: {
+                rocketpayKeyId: keyId,
+                isDeleted: true,
+                keyStatus: "FINISHED",
+                status: "FINISHED",
+            },
+            source: "ADMIN",
+        });
+        return { key: formatDlcKey(doc), rocketpay: data };
+    }
     return exports.unregisterKey(local.user, id);
 };
 
 exports.adminLockKey = async (id, body) => {
     const local = await exports.resolveDlcKey(id);
-    return exports.lockKey(local.user, id, body);
+    return exports.lockKey(local.user || null, id, body);
 };
 
 exports.adminUnlockKey = async (id, body) => {
     const local = await exports.resolveDlcKey(id);
-    return exports.unlockKey(local.user, id, body);
+    return exports.unlockKey(local.user || null, id, body);
 };
 
 exports.getCoinWallet = async () => {
     const data = await gateway.getCoinWallet();
     return { wallet: formatCoinWallet(data), rocketpay: data };
+};
+
+/**
+ * Link Unassigned DLC key to CredAxis merchant (user who applied DLC).
+ * Body: { userId } OR { mobile }
+ */
+exports.assignMerchant = async (id, body = {}) => {
+    const local = await exports.resolveDlcKey(id);
+    const User = require("../user/model");
+
+    let user = null;
+    if (body.userId && isObjectId(body.userId)) {
+        user = await User.findById(body.userId);
+    } else if (body.mobile) {
+        const digits = digitsOnly(body.mobile);
+        user = await User.findOne({
+            isDeleted: { $ne: true },
+            $or: [
+                { mobile: String(body.mobile).trim() },
+                ...(digits ? [{ mobile: new RegExp(`${digits}$`) }] : []),
+            ],
+        });
+    }
+
+    if (!user || user.isDeleted) {
+        throw new ApiError(404, "Merchant user not found");
+    }
+
+    const snap = await buildMerchantSnapshot(user._id);
+    local.user = user._id;
+    local.merchantName = snap.merchantName;
+    local.merchantMobile = snap.merchantMobile;
+    await local.save();
+    await local.populate("user", "mobile email status");
+    await attachMerchantNames([local]);
+    return { key: formatDlcKey(local) };
 };
 
 exports.reconKeys = async () => {
@@ -593,25 +1006,25 @@ exports.reconKeys = async () => {
 
 exports.adminSendTextReminder = async (id, body) => {
     const local = await exports.resolveDlcKey(id);
-    return exports.sendTextReminder(local.user, id, body);
+    return exports.sendTextReminder(local.user || null, id, body);
 };
 
 exports.adminSendFullScreenReminder = async (id, body) => {
     const local = await exports.resolveDlcKey(id);
-    return exports.sendFullScreenReminder(local.user, id, body);
+    return exports.sendFullScreenReminder(local.user || null, id, body);
 };
 
 exports.adminFetchUnlockCode = async (id, body) => {
     const local = await exports.resolveDlcKey(id);
-    return exports.fetchUnlockCode(local.user, id, body);
+    return exports.fetchUnlockCode(local.user || null, id, body);
 };
 
 exports.adminListActions = async (id) => {
     const local = await exports.resolveDlcKey(id);
-    return exports.listActions(local.user, id);
+    return exports.listActions(local.user || null, id);
 };
 
 exports.adminGetControls = async (id) => {
     const local = await exports.resolveDlcKey(id);
-    return exports.getControls(local.user, id);
+    return exports.getControls(local.user || null, id);
 };

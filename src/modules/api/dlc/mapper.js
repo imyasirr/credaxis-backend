@@ -18,12 +18,54 @@ exports.formatDlcKey = (doc) => {
     if (!doc) return null;
     const data = doc.toObject ? doc.toObject() : doc;
 
+    const customerName = data.customerName || null;
+    const customerMobile = data.customerMobile || null;
+
+    let merchant = null;
+    if (data.user && data.user._id) {
+        const fullName =
+            data.user.fullName ||
+            [data.user.firstName, data.user.lastName]
+                .filter(Boolean)
+                .join(" ") ||
+            data.merchantName ||
+            "";
+        merchant = {
+            id: data.user._id,
+            name: fullName || data.merchantName || null,
+            mobile: data.user.mobile || data.merchantMobile || "",
+            email: data.user.email || "",
+            status: data.user.status || "",
+        };
+    } else if (data.user && !data.user._id) {
+        merchant = {
+            id: data.user,
+            name: data.merchantName || null,
+            mobile: data.merchantMobile || "",
+            email: "",
+        };
+    } else if (data.merchantName || data.merchantMobile) {
+        merchant = {
+            id: null,
+            name: data.merchantName || null,
+            mobile: data.merchantMobile || "",
+            email: "",
+        };
+    }
+
     return {
         id: data._id,
         rocketpaySuperKeyId: data.rocketpaySuperKeyId,
         rocketpayKeyId: data.rocketpayKeyId,
-        customerName: data.customerName,
-        customerMobile: data.customerMobile,
+        merchant,
+        merchantName: merchant?.name || data.merchantName || null,
+        merchantMobile: merchant?.mobile || data.merchantMobile || null,
+        customer: {
+            name: customerName,
+            mobile: customerMobile,
+        },
+        customerName,
+        customerMobile,
         manufacturer: data.manufacturer,
         model: data.model,
         imeiNo: data.imeiNo,
@@ -40,18 +82,30 @@ exports.formatDlcKey = (doc) => {
         deviceInfo: data.deviceInfo,
         lastSyncedAt: data.lastSyncedAt,
         source: data.source,
-        user: data.user
-            ? data.user._id
-                ? {
-                      id: data.user._id,
-                      mobile: data.user.mobile || "",
-                      email: data.user.email || "",
-                      status: data.user.status || "",
-                  }
-                : { id: data.user }
-            : null,
+        user: merchant,
         createdAt: data.createdAt,
         updatedAt: data.updatedAt,
+    };
+};
+
+exports.formatDlcCustomer = (row) => {
+    if (!row) return null;
+    return {
+        id: row.id,
+        customer: {
+            name: row.customerName || null,
+            mobile: row.customerMobile || null,
+        },
+        customerName: row.customerName || null,
+        customerMobile: row.customerMobile || null,
+        deviceCount: row.deviceCount || 0,
+        lockedCount: row.lockedCount || 0,
+        activeCount: row.activeCount || 0,
+        latestStatus: row.latestStatus || null,
+        latestKeyId: row.latestKeyId || null,
+        latestImei: row.latestImei || null,
+        latestDevice: row.latestDevice || null,
+        lastRegisteredAt: row.lastRegisteredAt || null,
     };
 };
 

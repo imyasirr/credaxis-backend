@@ -216,3 +216,19 @@ exports.retryInstallment = [
         .matches(/^\d{4}-\d{2}-\d{2}$/)
         .withMessage("schedule_date must be YYYY-MM-DD"),
 ];
+
+exports.listCollections = [
+    query("page").optional().isInt({ min: 1 }),
+    query("limit").optional().isInt({ min: 1, max: 100 }),
+    query("mandateId").optional().isMongoId(),
+    query("state").optional().trim(),
+    query("customerMobile").optional().trim(),
+    query("search").optional().trim(),
+];
+
+exports.collectionsSummary = [
+    query("mandateId").optional().isMongoId(),
+    query("state").optional().trim(),
+    query("customerMobile").optional().trim(),
+    query("search").optional().trim(),
+];

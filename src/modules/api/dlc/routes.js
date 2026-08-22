@@ -24,6 +24,23 @@ router.get(
     controller.getCatalogue
 );
 
+/** Merchant customers — kis pe DLC register kiya */
+router.get(
+    "/customers",
+    requireAction(ACTIONS.MANDATE_READ),
+    validator.listCustomers,
+    validate,
+    controller.listCustomers
+);
+
+router.get(
+    "/customers/detail",
+    requireAction(ACTIONS.MANDATE_READ),
+    validator.getCustomer,
+    validate,
+    controller.getCustomer
+);
+
 router.post(
     "/keys",
     requireAction(ACTIONS.MANDATE_WRITE),

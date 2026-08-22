@@ -38,6 +38,19 @@ exports.listKeys = asyncHandler(async (req, res) => {
     return response.success(res, "DLC keys fetched successfully", data);
 });
 
+exports.listCustomers = asyncHandler(async (req, res) => {
+    const data = await dlcService.listMyCustomers(req.user.id, req.query);
+    return response.success(res, "DLC customers fetched successfully", data);
+});
+
+exports.getCustomer = asyncHandler(async (req, res) => {
+    const data = await dlcService.getMyCustomer(req.user.id, {
+        mobile: req.query.mobile || req.params.mobile,
+        id: req.query.id || req.params.id,
+    });
+    return response.success(res, "DLC customer fetched successfully", data);
+});
+
 exports.getKey = asyncHandler(async (req, res) => {
     const refresh =
         req.query.refresh === "true" || req.query.refresh === "1";

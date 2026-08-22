@@ -77,3 +77,8 @@ exports.getCoinWallet = asyncHandler(async (_req, res) => {
     const data = await dlcService.getCoinWallet();
     return response.success(res, "RocketPay coin wallet fetched", data);
 });
+
+exports.assignMerchant = asyncHandler(async (req, res) => {
+    const data = await dlcService.assignMerchant(req.params.id, req.body || {});
+    return response.success(res, "Merchant assigned to DLC key", data);
+});

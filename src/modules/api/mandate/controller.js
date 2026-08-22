@@ -118,6 +118,30 @@ exports.retryInstallment = asyncHandler(async (req, res) => {
     return response.success(res, "Installment retry scheduled", data);
 });
 
+exports.getCollectionsSummary = asyncHandler(async (req, res) => {
+    const data = await mandateService.getCollectionsSummary(
+        req.user.id,
+        req.query
+    );
+    return response.success(res, "Mandate collections summary fetched", data);
+});
+
+exports.listMandateCollections = asyncHandler(async (req, res) => {
+    const data = await mandateService.listMandateCollections(
+        req.user.id,
+        req.query
+    );
+    return response.success(res, "Mandate collections fetched", data);
+});
+
+exports.getMandateCollections = asyncHandler(async (req, res) => {
+    const data = await mandateService.getMandateCollections(
+        req.user.id,
+        req.params.id
+    );
+    return response.success(res, "Mandate collection detail fetched", data);
+});
+
 exports.webhook = asyncHandler(async (req, res) => {
     const data = await webhookService.handleWebhook(req);
     return response.success(res, "Webhook received", data);
