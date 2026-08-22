@@ -20,5 +20,6 @@ router.use("/installments", require("./mandate/installment.routes"));
 router.use("/webhooks", require("./mandate/webhook.routes"));
 router.use("/dlc", require("./dlc/routes"));
 router.use("/banners", require("./banner/routes"));
+router.use("/app-credentials", require("./appCredentials/routes"));
 
 module.exports = router;
